@@ -30,14 +30,14 @@ import sys
 import time
 
 import cv2
-import numpy as np
 
-# HSV thresholds for red. OpenCV hue range is 0-179.
-# Tune these if lighting in your environment differs.
-RED_LOW_1 = np.array([0, 100, 70])
-RED_HIGH_1 = np.array([10, 255, 255])
-RED_LOW_2 = np.array([160, 100, 70])
-RED_HIGH_2 = np.array([179, 255, 255])
+# HSV thresholds for red. OpenCV hue range is 0-179 and red wraps around 0,
+# so red = hue <= RED_HUE_LOW or hue >= RED_HUE_HIGH.
+# Tune these if lighting in your environment differs (camera_viz.py has sliders).
+RED_HUE_LOW = 10
+RED_HUE_HIGH = 160
+RED_MIN_SAT = 100
+RED_MIN_VAL = 70
 
 MIN_AREA = 800            # px^2 at 640x480; ignore tiny red blobs
 MIN_VERTICES = 7          # an octagon approximated at distance may lose/gain a corner
@@ -65,51 +65,69 @@ def open_camera(device, width, height, fps):
     return cap
 
 
-def red_mask(frame):
+def red_mask(frame, min_sat=RED_MIN_SAT, min_val=RED_MIN_VAL,
+             hue_low=RED_HUE_LOW, hue_high=RED_HUE_HIGH):
+    """Binary mask of red pixels: hue <= hue_low or hue >= hue_high, with
+    saturation >= min_sat and value >= min_val."""
     blurred = cv2.GaussianBlur(frame, (5, 5), 0)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, RED_LOW_1, RED_HIGH_1) | cv2.inRange(hsv, RED_LOW_2, RED_HIGH_2)
+    mask = (cv2.inRange(hsv, (0, min_sat, min_val), (hue_low, 255, 255))
+            | cv2.inRange(hsv, (hue_high, min_sat, min_val), (179, 255, 255)))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
     return mask
 
 
-def detect_stop_signs(frame, min_area):
-    """Return (list of detections, mask). Each detection is a dict with
-    bbox (x, y, w, h), center (cx, cy), area and the approximated polygon."""
-    mask = red_mask(frame)
+def analyze_contours(mask, min_area):
+    """Run the shape tests on every red blob in the mask.
+
+    Returns a list of dicts (largest first) with the measured values and
+    `reason`: None if the blob passed every test, otherwise why it was rejected."""
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    detections = []
+    results = []
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < min_area:
-            continue
-
         perimeter = cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, APPROX_EPSILON * perimeter, True)
-        if not (MIN_VERTICES <= len(approx) <= MAX_VERTICES):
-            continue
-
         x, y, w, h = cv2.boundingRect(approx)
         aspect = w / float(h)
-        if not (MIN_ASPECT <= aspect <= MAX_ASPECT):
-            continue
-
         hull_area = cv2.contourArea(cv2.convexHull(cnt))
         solidity = area / hull_area if hull_area > 0 else 0
-        if solidity < MIN_SOLIDITY:
-            continue
 
-        detections.append({
+        if area < min_area:
+            reason = "too small"
+        elif not (MIN_VERTICES <= len(approx) <= MAX_VERTICES):
+            reason = f"{len(approx)} corners"
+        elif not (MIN_ASPECT <= aspect <= MAX_ASPECT):
+            reason = f"aspect {aspect:.2f}"
+        elif solidity < MIN_SOLIDITY:
+            reason = f"solidity {solidity:.2f}"
+        else:
+            reason = None
+
+        results.append({
             "bbox": (x, y, w, h),
             "center": (x + w // 2, y + h // 2),
             "area": area,
             "polygon": approx,
+            "contour": cnt,
+            "vertices": len(approx),
+            "aspect": aspect,
+            "solidity": solidity,
+            "reason": reason,
         })
 
-    detections.sort(key=lambda d: d["area"], reverse=True)
+    results.sort(key=lambda d: d["area"], reverse=True)
+    return results
+
+
+def detect_stop_signs(frame, min_area):
+    """Return (list of detections, mask). Each detection is a dict with
+    bbox (x, y, w, h), center (cx, cy), area and the approximated polygon."""
+    mask = red_mask(frame)
+    detections = [d for d in analyze_contours(mask, min_area) if d["reason"] is None]
     return detections, mask
 
 
