@@ -1,0 +1,6 @@
+note-python
+pyserial
+python-periphery
+paho-mqtt>=2.0
+requests
+pytest
