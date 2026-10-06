@@ -47,6 +47,7 @@ Web app ◀── Events API / MQTT route ◀── Notehub ◀──LTE── N
 | SDA | pin 3 (GPIO2, SDA1) |
 | SCL | pin 5 (GPIO3, SCL1) |
 | GND | any GND |
+| VBAT | + of a separate supply (see power below). That supply's − goes to Notecarrier GND, so the Pi, the card and the supply share one ground |
 
 - **Bus:** `/dev/i2c-1`. **Address:** `0x17`. `/boot/firmware/config.txt` has `dtparam=i2c_arm=on`.
 - **Permissions:** the user must be in the `i2c` group (`/dev/i2c-1` is `root:i2c 660`). `sdteam22` already is.
@@ -170,7 +171,29 @@ polling commands.qi every 1.0s (Ctrl-C to stop)
 
 - **Run only one program that talks to the card at a time.** The receiver deletes commands as it reads them, and two
   programs sharing the I2C connection can interfere with each other.
-- It stops when the terminal closes. Use `tmux`/`screen` for tests; the robot needs a systemd service (not done yet).
+- It stops when the terminal closes. For tests use `./cellular_logger.sh start` (below); the robot needs a systemd service (not done yet).
+- **Log file:** everything it prints is also appended to `cellular_test/logs/cellular_log.txt` (gitignored), with timestamps
+  in UTC from the **Notecard's** clock (the Pi has no NTP without Ethernet). The file also gets the full raw JSON of each
+  received note (`raw:` lines) and a `heartbeat:` line every 60 s (hub status, bars, RSRP). `--log PATH` / `--no-log` change it.
+
+### Unattended logging (no Ethernet, e.g. lab tests)
+
+```bash
+./cellular_logger.sh start    # runs receive_demo.py in a detached tmux session "cellular"; restarts 5 s after a crash
+./cellular_logger.sh status   # running? + last 5 log lines
+./cellular_logger.sh view     # tail -F the log (Ctrl-C stops viewing only)
+./cellular_logger.sh stop
+```
+
+To SSH in without Ethernet, `../setup_usb_gadget.sh` (run once with sudo, then reboot) turns the Pi's USB-C port into a
+USB Ethernet adapter: plug a laptop into it and `ssh sdteam22@192.168.77.1`. Its header explains what it changes, and `--uninstall` reverts it.
+**Then USB-C is the Pi's only power input**, so watch `vcgencmd get_throttled` (§2 power).
+
+- **Auto-start:** `crontab -l` has an `@reboot` line that runs `cellular_logger.sh start` 15 s after boot (output in `logs/autostart.txt`).
+  Remove it with `crontab -e` once a real systemd service exists.
+- **Control panel** (`cellular_test/control_panel/`): `panel.py` runs **on the laptop** (the Pi has no internet without Ethernet).
+  It sends commands to Notehub, streams the Pi log over `ssh robot`, and tracks each command: sent → received → result → ack.
+  Standard library only. `MAC_CLAUDE_PROMPT.md` is the briefing for a Claude session on the laptop.
 - Commands sent while it isn't running wait on the card or in Notehub, and are handled when it starts (subject to staleness).
 
 ### Quick manual tests

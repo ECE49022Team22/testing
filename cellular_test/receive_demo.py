@@ -5,9 +5,10 @@ Handlers only PRINT. This bring-up test never drives motors or any actuator.
 
 import argparse
 import json
+import os
 import time
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from notecard_link import NotecardError, NotecardLink, open_card
 
@@ -19,6 +20,44 @@ ACKS_FILE = "acks.qo"
 MAX_AGE_SECONDS = {"route": 600, "navigate": 60}
 REQUIRES_ISSUED_AT = {"route"}
 SEEN_IDS_MAX = 1000
+
+DEFAULT_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "cellular_log.txt")
+HEARTBEAT_SECONDS = 60
+
+# Set by --log: every console line is also appended to this file, timestamped.
+_log_file = None
+# Card clock minus Pi clock. The Pi has no NTP without Ethernet (and no RTC battery), so log
+# timestamps use the Notecard's network time; refreshed at start and on every heartbeat.
+_clock_offset = 0.0
+
+
+def open_log(path):
+    global _log_file
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    _log_file = open(path, "a", buffering=1)
+
+
+def sync_log_clock(link):
+    global _clock_offset
+    _clock_offset = link.now() - time.time()
+
+
+def log(msg, file_only=False):
+    """Print a line and append it to the log file (if open) with a UTC timestamp."""
+    if not file_only:
+        print(msg, flush=True)
+    if _log_file is not None:
+        ts = datetime.fromtimestamp(time.time() + _clock_offset, timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        _log_file.write(f"{ts}  {msg}\n")
+
+
+def heartbeat(link):
+    """One status line: proves the receiver is alive and shows session state and signal."""
+    sync_log_clock(link)
+    hub = link.hub_status().get("status", "?")
+    w = link.wireless_status().get("net") or {}
+    log(f"heartbeat: hub={hub!r} bars={w.get('bars')} rssi={w.get('rssi')} rsrp={w.get('rsrp')} "
+        f"sinr={w.get('sinr')} rat={w.get('rat')}")
 
 
 class SessionWatchdog:
@@ -53,7 +92,7 @@ class SessionWatchdog:
             return False
         if self.last_sync is not None and now - self.last_sync < self.retry_every:
             return False
-        print(f"session not open for {now - self.closed_since:.0f}s ({status}); forcing hub.sync")
+        log(f"session not open for {now - self.closed_since:.0f}s ({status}); forcing hub.sync")
         self.link.sync()
         self.last_sync = now
         return True
@@ -61,7 +100,7 @@ class SessionWatchdog:
 
 def handle_navigate(cmd):
     b = cmd.get("body", {})
-    print(f"  -> [navigate] would go to lat={b.get('lat')} lon={b.get('lon')} (print only)")
+    log(f"  -> [navigate] would go to lat={b.get('lat')} lon={b.get('lon')} (print only)")
     return "logged"
 
 
@@ -94,7 +133,7 @@ def handle_route(cmd):
             path = f"polyline {len(pts)} pts, start lat={slat} lon={slon}, end lat={elat} lon={elon}"
         else:
             path = "polyline 0 pts"
-    print(
+    log(
         f"  -> [route] would go to lat={lat} lon={lon} ({b.get('profile')}, "
         f"{b.get('distanceMeters')} m, {b.get('durationSeconds')} s); {path} (print only)"
     )
@@ -102,12 +141,12 @@ def handle_route(cmd):
 
 
 def handle_stop(cmd):
-    print("  -> [stop] (print only)")
+    log("  -> [stop] (print only)")
     return "logged"
 
 
 def handle_ping(cmd):
-    print("  -> [ping] pong")
+    log("  -> [ping] pong")
     return "pong"
 
 
@@ -176,18 +215,19 @@ def poll_once(link, handlers, ack=True, seen=None, now=None):
     a repeated id is not acted on again, but is acked again with the first result."""
     results = []
     for cmd in link.receive_notes(COMMANDS_FILE):
-        print(f"received: {summarize(cmd)}")
+        log(f"received: {summarize(cmd)}")
+        log(f"  raw: {json.dumps(cmd)}", file_only=True)  # full note, incl. long polylines
         cmd_id = cmd.get("id") if isinstance(cmd, dict) else None
         if seen is not None and isinstance(cmd_id, str) and cmd_id in seen:
             result = dict(seen[cmd_id], duplicate=True)
-            print("  duplicate id: not acting again")
+            log("  duplicate id: not acting again")
         else:
             result = dispatch_command(cmd, handlers, now=now() if callable(now) else now)
             if seen is not None and isinstance(cmd_id, str) and cmd_id:
                 seen[cmd_id] = result
                 while len(seen) > SEEN_IDS_MAX:
                     seen.popitem(last=False)
-        print(f"  result: {json.dumps(result)}")
+        log(f"  result: {json.dumps(result)}")
         if ack:
             link.send_note(ACKS_FILE, result, sync=True)
         results.append(result)
@@ -199,20 +239,34 @@ def main():
     ap.add_argument("--interval", type=float, default=1.0, help="seconds between polls")
     ap.add_argument("--no-ack", action="store_true", help="don't send results to acks.qo")
     ap.add_argument("--once", action="store_true", help="poll a single time and exit")
+    ap.add_argument("--log", default=DEFAULT_LOG, help=f"append everything to this text file (default: {DEFAULT_LOG})")
+    ap.add_argument("--no-log", action="store_true", help="console only, no log file")
     args = ap.parse_args()
 
+    if not args.no_log:
+        open_log(args.log)
     link = NotecardLink(open_card())
+    sync_log_clock(link)
+    log(f"===== receiver start (pid {os.getpid()}, Pi clock {datetime.now().astimezone():%Y-%m-%d %H:%M:%S %Z}) =====")
     link.enable_immediate_sync()
-    print(f"card: {link.version().get('device')}  hub: {link.hub_status().get('status')}")
-    print(f"polling {COMMANDS_FILE} every {args.interval}s (Ctrl-C to stop)")
+    log(f"card: {link.version().get('device')}  hub: {link.hub_status().get('status')}")
+    log(f"polling {COMMANDS_FILE} every {args.interval}s (Ctrl-C to stop)")
+    if _log_file is not None:
+        log(f"logging to {os.path.abspath(args.log)}")
     seen = OrderedDict()
     watchdog = SessionWatchdog(link)
+    next_heartbeat = 0.0
     while True:
         try:
             poll_once(link, HANDLERS, ack=not args.no_ack, seen=seen, now=link.now)
             watchdog.tick()
+            if time.monotonic() >= next_heartbeat:
+                next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
+                heartbeat(link)
         except NotecardError as e:
-            print(f"notecard error: {e}")
+            log(f"notecard error: {e}")
+        except OSError as e:  # I2C hiccup (e.g. brownout): log it and keep going instead of dying unattended
+            log(f"I/O error talking to the card: {e!r}")
         if args.once:
             break
         time.sleep(args.interval)
@@ -222,4 +276,8 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        pass
+        log("===== receiver stopped (Ctrl-C) =====")
+    except Exception as e:
+        hint = " (card not answering: is it wired and powered? `i2cdetect -y 1` should show 17)" if "reset Notecard" in str(e) else ""
+        log(f"===== receiver crashed: {e!r}{hint} =====")
+        raise

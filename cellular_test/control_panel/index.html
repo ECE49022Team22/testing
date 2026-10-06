@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot Cellular Panel</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #667080; --border: #dde1e6;
+    --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --accent: #0969da; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1215; --panel: #171b20; --text: #e6e8eb; --muted: #8b949e; --border: #2b3139;
+            --ok: #3fb950; --warn: #d29922; --bad: #f85149; --accent: #4493f8; --code: #11151a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, system-ui, sans-serif; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+           display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  h1 { font-size: 16px; margin: 0 8px 0 0; }
+  .chip { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+  .chip b { color: var(--text); font-weight: 600; }
+  main { display: grid; grid-template-columns: 340px 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  label { font-size: 12px; color: var(--muted); }
+  input, textarea { font: 13px ui-monospace, Menlo, monospace; padding: 5px 7px; border: 1px solid var(--border);
+                    border-radius: 6px; background: var(--code); color: var(--text); }
+  input { width: 110px; } textarea { width: 100%; height: 70px; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+           background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .stack > * + * { margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  td.mono { font-family: ui-monospace, Menlo, monospace; }
+  .s-ok { color: var(--ok); } .s-bad { color: var(--bad); } .s-wait { color: var(--muted); }
+  #log { height: 46vh; overflow: auto; background: var(--code); border-radius: 6px; padding: 8px;
+         font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+  #log .recv { color: var(--accent); font-weight: 600; } #log .res { color: var(--ok); }
+  #log .err { color: var(--bad); } #log .hb { color: var(--muted); } #log .panel { color: var(--warn); }
+  #msg { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  .right { display: grid; gap: 16px; align-content: start; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Robot cellular panel</h1>
+  <span class="chip"><span class="dot" id="d-link"></span>Pi link <b id="c-link">…</b></span>
+  <span class="chip"><span class="dot" id="d-logger"></span>Logger <b id="c-logger">…</b></span>
+  <span class="chip"><span class="dot" id="d-hb"></span>Last heartbeat <b id="c-hb">…</b></span>
+  <span class="chip"><span class="dot" id="d-power"></span>Power <b id="c-power">…</b></span>
+  <span class="chip">Pi uptime <b id="c-up">…</b></span>
+</header>
+<main>
+  <div class="stack">
+    <section>
+      <h2>Send command (via Notehub)</h2>
+      <div class="row"><button class="primary" onclick="send({type:'ping'})">Ping</button>
+        <button onclick="send({type:'stop'})">Stop</button></div>
+      <div class="row">
+        <label>lat <input id="nlat" value="40.4274"></label><label>lon <input id="nlon" value="-86.9139"></label>
+      </div>
+      <div class="row">
+        <button onclick="send({type:'navigate', body:{lat:+v('nlat'), lon:+v('nlon')}})">Navigate</button>
+        <button onclick="sendRoute()">Route (3-pt test)</button>
+      </div>
+      <label>Custom JSON (id and issuedAt are added if missing)</label>
+      <textarea id="custom">{"type": "ping"}</textarea>
+      <div class="row"><button onclick="sendCustom()">Send custom</button></div>
+      <div id="msg"></div>
+    </section>
+    <section>
+      <h2>Pi</h2>
+      <div class="row"><button onclick="post('/api/logger/start')">Start logger</button>
+        <button onclick="post('/api/logger/stop')">Stop logger</button></div>
+      <div class="row"><button onclick="checkAcks()">Check acks in Notehub</button></div>
+      <label>Acks are only checked when you press this (Notehub rate-limits the Events API).</label>
+    </section>
+  </div>
+  <div class="right">
+    <section>
+      <h2>Sent commands</h2>
+      <table><thead><tr><th>id</th><th>type</th><th>Notehub</th><th>Received on Pi</th><th>Result</th><th>Ack in cloud</th></tr></thead>
+        <tbody id="cmds"><tr><td colspan="6" class="s-wait">Nothing sent yet.</td></tr></tbody></table>
+    </section>
+    <section>
+      <h2>Pi log (live, logs/cellular_log.txt)</h2>
+      <div class="row"><label><input type="checkbox" id="follow" checked style="width:auto"> follow</label>
+        <label><input type="checkbox" id="hidehb" style="width:auto"> hide heartbeats</label></div>
+      <div id="log"></div>
+    </section>
+  </div>
+</main>
+<script>
+let since = 0, lastHb = null;
+const $ = id => document.getElementById(id);
+const v = id => $(id).value;
+const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+async function post(path, body) {
+  try {
+    const r = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Panel': '1'},
+                                 body: JSON.stringify(body || {})});
+    const j = await r.json();
+    $('msg').textContent = j.error ? 'Error: ' + j.error : (j.output || (j.id ? `sent ${j.id}: HTTP ${j.http} ${j.text || ''}` : JSON.stringify(j)));
+    return j;
+  } catch (e) { $('msg').textContent = 'Panel not reachable: ' + e; }
+}
+const send = cmd => post('/api/send', cmd);
+function sendRoute() {
+  const lat = +v('nlat'), lon = +v('nlon');
+  send({type: 'route', body: {destination: {lat, lon}, profile: 'foot', distanceMeters: 120, durationSeconds: 90,
+        polyline: [[lon - 0.001, lat - 0.0005], [lon - 0.0005, lat - 0.0002], [lon, lat]]}});  // GeoJSON [lon, lat]
+}
+function sendCustom() {
+  let cmd; try { cmd = JSON.parse(v('custom')); } catch (e) { $('msg').textContent = 'Bad JSON: ' + e.message; return; }
+  send(cmd);
+}
+async function checkAcks() {
+  const j = await post('/api/check-acks');
+  if (j && j.ok) $('msg').textContent = `Events API: ${j.events} acks.qo events, ${j.matched} newly matched`;
+}
+
+function dot(id, cls) { $(id).className = 'dot ' + (cls || ''); }
+function ago(sec) { return sec < 90 ? `${Math.round(sec)} s ago` : `${Math.round(sec / 60)} min ago`; }
+function cls(line) {
+  if (line.startsWith('[panel]')) return 'panel';
+  if (/received: /.test(line)) return 'recv';
+  if (/result: /.test(line)) return /"ok": true/.test(line) ? 'res' : 'err';
+  if (/heartbeat: /.test(line)) return 'hb';
+  if (/error|crash|Failed|not open/i.test(line)) return 'err';
+  return '';
+}
+function cell(stage, okText) {
+  if (!stage) return '<td class="s-wait">waiting…</td>';
+  return `<td class="s-ok">${esc(okText(stage))}</td>`;
+}
+
+async function tick() {
+  let s;
+  try { s = await (await fetch('/api/state?since=' + since)).json(); }
+  catch (e) { $('c-link').textContent = 'panel stopped'; dot('d-link', 'bad'); return; }
+  since = s.seq;
+  const log = $('log'), hide = $('hidehb').checked;
+  for (const [, line] of s.lines) {
+    const m = line.match(/^(\S+ \S+Z)  heartbeat: (.*)$/);
+    if (m) lastHb = {t: Date.parse(m[1].replace(' ', 'T')), text: m[2]};
+    const c = cls(line);
+    const div = document.createElement('div');
+    div.className = c; div.textContent = line;
+    if (c === 'hb' && hide) div.style.display = 'none';
+    log.appendChild(div);
+  }
+  while (log.childElementCount > 3000) log.removeChild(log.firstChild);
+  if (s.lines.length && $('follow').checked) log.scrollTop = log.scrollHeight;
+
+  $('c-link').textContent = s.link.state + (s.link.detail ? ' (' + s.link.detail + ')' : '');
+  dot('d-link', s.link.state === 'up' ? 'ok' : s.link.state === 'down' ? 'bad' : 'warn');
+  const pi = s.pi || {};
+  if (pi.checked) {
+    if (!pi.ok) { $('c-logger').textContent = 'unknown'; dot('d-logger', 'bad'); $('c-power').textContent = '?'; dot('d-power'); }
+    else {
+      $('c-logger').textContent = pi.logger; dot('d-logger', pi.logger === 'running' ? 'ok' : 'bad');
+      const t = parseInt(pi.throttled || '0', 16);
+      $('c-power').textContent = pi.throttled === '0x0' ? 'OK' : (t & 1 ? 'UNDERVOLTAGE NOW' : 'undervolted since boot') + ` (${pi.throttled})`;
+      dot('d-power', pi.throttled === '0x0' ? 'ok' : t & 1 ? 'bad' : 'warn');
+      $('c-up').textContent = (pi.uptime || '?').replace(/^up /, '');
+    }
+  }
+  if (lastHb) {
+    const age = Date.now() / 1000 - lastHb.t / 1000;
+    $('c-hb').textContent = ago(age) + ' · ' + lastHb.text.replace(/ rssi=.*rat=/, ' rat=');
+    dot('d-hb', age < 150 ? (/\{connected\}/.test(lastHb.text) ? 'ok' : 'warn') : 'bad');
+  } else { $('c-hb').textContent = 'none yet'; dot('d-hb', 'warn'); }
+  $('msg').dataset.token = s.has_token;
+  if (!s.has_token) $('msg').textContent = 'NOTEHUB_API_KEY is not set: sending is disabled. See panel.py --help.';
+
+  const tb = $('cmds');
+  if (s.commands.length) tb.innerHTML = s.commands.map(c => {
+    const http = c.http === 200 ? '<td class="s-ok">queued (200)</td>' : `<td class="s-bad">${esc(String(c.http))} ${esc(c.http_text || '')}</td>`;
+    const recv = c.received ? `<td class="s-ok">${esc(c.received.at.slice(11))} (${Math.max(0, Date.parse(c.received.at.replace(' ', 'T')) / 1000 - c.sent_at).toFixed(1)} s)</td>` : (c.http === 200 ? '<td class="s-wait">waiting…</td>' : '<td>–</td>');
+    const res = !c.result ? (c.received ? '<td class="s-wait">waiting…</td>' : '<td>–</td>')
+      : `<td class="${c.result.data.ok ? 's-ok' : 's-bad'}">${esc(c.result.data.ok ? String(c.result.data.result) : c.result.data.error)}</td>`;
+    const ack = c.cloud_ack ? '<td class="s-ok">yes</td>' : '<td class="s-wait">–</td>';
+    return `<tr><td class="mono">${esc(c.id)}</td><td>${esc(c.cmd.type)}</td>${http}${recv}${res}${ack}</tr>`;
+  }).join('');
+}
+setInterval(tick, 1000); tick();
+</script>
+</body>
+</html>
