@@ -255,3 +255,27 @@ def test_watchdog_only_checks_every_interval():
     for _ in range(4):
         dog.tick()
     assert [r["req"] for r in card.requests] == ["hub.status", "hub.status"]
+
+
+# --- log file ----------------------------------------------------------------
+
+def test_log_file_gets_timestamped_lines_and_full_raw_note(tmp_path, monkeypatch, capsys):
+    import receive_demo
+
+    monkeypatch.setattr(receive_demo, "_log_file", None)
+    monkeypatch.setattr(receive_demo, "_clock_offset", 0.0)
+    path = tmp_path / "sub" / "log.txt"
+    receive_demo.open_log(str(path))
+    poly = [[-86.9 - i / 1000, 40.4] for i in range(10)]
+    cmd = {"id": "p1", "type": "ping", "body": {"polyline": poly}}
+    card = FakeNotecard({"note.changes": [{"notes": {"a": {"body": cmd, "time": 1}}}, {}]})
+
+    poll_once(NotecardLink(card), {"ping": lambda c: "pong"}, ack=False)
+    receive_demo._log_file.close()
+
+    lines = path.read_text().splitlines()
+    assert all(line[:4].isdigit() and line[19] == "Z" for line in lines)  # "YYYY-MM-DD HH:MM:SSZ  ..."
+    text = path.read_text()
+    assert "received:" in text and "<10 points>" in text
+    assert f"raw: {__import__('json').dumps(cmd)}" in text  # full polyline only in the file
+    assert "raw:" not in capsys.readouterr().out
