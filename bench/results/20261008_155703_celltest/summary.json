@@ -1,0 +1,65 @@
+{
+ "run": "20261008_155703_celltest",
+ "duration_s": 10.000133071999699,
+ "workers": {
+  "cell": {
+   "info": {
+    "pid": 18987,
+    "version": "notecard-11.3.1.17696",
+    "affinity": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "nice": 0,
+    "policy": 0
+   },
+   "counters": {},
+   "metrics": {
+    "poll_late_ms": {
+     "n": 10,
+     "mean": 0.08316070006912923,
+     "std": 0.004750329691771423,
+     "min": 0.07450200018865871,
+     "p50": 0.0829279999834398,
+     "p90": 0.08739600020817306,
+     "p99": 0.09226409992606932,
+     "p99.9": 0.09275090989785895,
+     "max": 0.09280499989472446
+    },
+    "poll_rtt_ms": {
+     "n": 10,
+     "mean": 102.3612518000391,
+     "std": 1.6926375362673445,
+     "min": 101.4163780000672,
+     "p50": 101.63079349990767,
+     "p90": 103.86686960014231,
+     "p99": 106.7859119600189,
+     "p99.9": 107.07781619600655,
+     "max": 107.11025000000518,
+     "budget": 500.0,
+     "over_budget": 0,
+     "over_budget_pct": 0.0
+    },
+    "status_rtt_ms": {
+     "n": 0
+    }
+   }
+  }
+ },
+ "rates": {},
+ "proc": {
+  "cell": {
+   "cpu_pct": 0.09999866929771102,
+   "invol_cs_per_s": 0.5999920157862656,
+   "vol_cs_per_s": 16.99977378061086,
+   "threads": 1,
+   "cpus_seen": [
+    2
+   ],
+   "cmd": "/home/sdteam22/testing/cellular_test/.venv/bin/python -u /home/sdteam22/testing/bench/w_cell.py --out /home/sdteam22/testing/bench/results/20261008_155703_celltest/cell.json --interval 1.0"
+  }
+ },
+ "missing": []
+}

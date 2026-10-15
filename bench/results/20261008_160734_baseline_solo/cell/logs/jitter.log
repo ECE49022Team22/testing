@@ -1,0 +1,2 @@
+$ /home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/cell/jitter.json --interval-us 1000
+[jitter] wrote /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/cell/jitter.json

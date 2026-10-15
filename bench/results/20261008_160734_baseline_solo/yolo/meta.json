@@ -1,0 +1,47 @@
+{
+ "t_go": 422.859918356,
+ "t_end": 452.860055029,
+ "duration_s": 30.000136673000043,
+ "workers": [
+  "yolo",
+  "jitter",
+  "sysmon"
+ ],
+ "proc": {
+  "yolo": {
+   "cpu_pct": 206.5657256014192,
+   "invol_cs_per_s": 1633.6592240964264,
+   "vol_cs_per_s": 842.3628290581676,
+   "threads": 8,
+   "cpus_seen": [
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/stop-sign-eval/.venv/bin/python -u /home/sdteam22/testing/bench/w_yolo.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/yolo/yolo.json --device 0 --width 640 --height 480 --fps 30"
+  },
+  "jitter": {
+   "cpu_pct": 4.633312225043936,
+   "invol_cs_per_s": 1.6333258922816751,
+   "vol_cs_per_s": 3920.5821387425726,
+   "threads": 5,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/yolo/jitter.json --interval-us 1000"
+  },
+  "sysmon": {
+   "cpu_pct": 0.19999908885081735,
+   "invol_cs_per_s": 1.1333281701546318,
+   "vol_cs_per_s": 5.266642673071524,
+   "threads": 1,
+   "cpus_seen": [
+    2
+   ],
+   "cmd": "/usr/bin/python3 -u /home/sdteam22/testing/bench/w_sysmon.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/yolo/sysmon.json --interval 0.5"
+  }
+ }
+}

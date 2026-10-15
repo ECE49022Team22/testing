@@ -1,0 +1,9 @@
+$ taskset -c 2,3 /home/sdteam22/stop-sign-eval/.venv/bin/python -u /home/sdteam22/testing/bench/w_yolo.py --out /home/sdteam22/testing/bench/results/20261008_173246_cores/yolo.json --device 0 --width 640 --height 480 --fps 30 --weights yolo26n_640_ncnn_model --threads 2 --latest
+[bench] 78302 repeated NCNN warnings collapsed (opt.num_threads was set after load, so convolutions kept 4 threads):
+    46342 x opt.num_threads 2 changed, convolution gemm will use load-time value 4
+    25568 x opt.num_threads 2 changed, convolution winograd will use load-time value 4
+     6392 x opt.num_threads 2 changed, gemm will use load-time value 4
+Loading /home/sdteam22/stop-sign-eval/yolo26n_640_ncnn_model for NCNN inference...
+Loading /home/sdteam22/stop-sign-eval/yolo26n_640_ncnn_model for NCNN inference...
+[yolo] ready
+[yolo] wrote 3969 samples

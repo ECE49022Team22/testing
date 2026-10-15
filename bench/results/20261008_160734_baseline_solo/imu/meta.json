@@ -1,0 +1,46 @@
+{
+ "t_go": 317.87820085,
+ "t_end": 347.878314262,
+ "duration_s": 30.00011341200002,
+ "workers": [
+  "imu",
+  "jitter",
+  "sysmon"
+ ],
+ "proc": {
+  "imu": {
+   "cpu_pct": 3.6333195979319237,
+   "invol_cs_per_s": 278.66561319918236,
+   "vol_cs_per_s": 1848.6596779936187,
+   "threads": 4,
+   "cpus_seen": [
+    0,
+    2
+   ],
+   "cmd": "/home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_imu.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/imu/imu.json --hz 100"
+  },
+  "jitter": {
+   "cpu_pct": 1.666660366023818,
+   "invol_cs_per_s": 0.46666490248666903,
+   "vol_cs_per_s": 3953.9183859402647,
+   "threads": 5,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/imu/jitter.json --interval-us 1000"
+  },
+  "sysmon": {
+   "cpu_pct": 0.13333282928190543,
+   "invol_cs_per_s": 0.09999962196142907,
+   "vol_cs_per_s": 4.933314683430501,
+   "threads": 1,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "/usr/bin/python3 -u /home/sdteam22/testing/bench/w_sysmon.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/imu/sysmon.json --interval 0.5"
+  }
+ }
+}
