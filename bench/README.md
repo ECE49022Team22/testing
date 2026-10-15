@@ -38,6 +38,11 @@ Reports: `BASELINE_REPORT.md` (first measurement + all suggestions), `ROUND1_RES
 (UART2, FTDI latency, RT limits), `setup_root_cores.sh` (isolcpus, IRQ affinity, performance governor).
 Raw samples are stored as `<worker>.json.gz`; `summarize.py` reads them directly.
 
+Also here: `external/` holds the two changes made in other repos for these rounds (STM32 USART5 DMA
+firmware for `pwm-lab5`, NCNN/thread support in `stop-sign-eval/detectors.py`), as full files and patches,
+with apply instructions. `tools/` has `test_lidar_parser.py` (new vs original LiDAR parser) and
+`yolo_speed.py` (YOLO inference timing).
+
 Per-worker knobs in the TOML: `cpus` (taskset), `nice`, `rt_prio` (SCHED_FIFO), `env`, `pre`/`post`
 commands. `rt_prio` works without sudo once `setup_root_tuning.sh` has installed the rtprio limit
 (check `ulimit -r` = 90); negative `nice` still needs root.

@@ -1,0 +1,149 @@
+diff --git a/src/main.c b/src/main.c
+index 6223c0b..c8c2521 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -93,6 +93,34 @@ void setup_tim3(void) {
+ //============================================================================
+ #define CMD_MAX 24
+ 
++// USART5 runs on DMA instead of polling RDR/TDR. Not on interrupts: autotest.o already defines
++// USART3_8_IRQHandler (shared by USART3-8). DMA1 ch1 = RX (circular), ch2 = TX (one shot per buffer).
++#define U5_RX_SIZE 128
++#define U5_TX_SIZE 256
++static volatile char u5_rx[U5_RX_SIZE];
++static uint32_t u5_rx_tail;
++static char u5_tx[2][U5_TX_SIZE];        // double buffer: one being sent, one being filled
++static int u5_tx_cur;                    // index of the buffer being filled
++static int u5_tx_fill;                   // bytes queued in it
++volatile uint32_t u5_overruns;           // ORE events, reported in telemetry if nonzero
++
++static void uart5_dma_init(void) {
++    RCC->AHBENR |= RCC_AHBENR_DMA1EN;
++    DMA1->CSELR = (DMA1->CSELR & ~(DMA_CSELR_C1S | DMA_CSELR_C2S))
++                  | DMA1_CSELR_CH1_USART5_RX | DMA1_CSELR_CH2_USART5_TX;
++
++    DMA1_Channel1->CCR = 0;
++    DMA1_Channel1->CPAR = (uint32_t)&USART5->RDR;
++    DMA1_Channel1->CMAR = (uint32_t)u5_rx;
++    DMA1_Channel1->CNDTR = U5_RX_SIZE;
++    DMA1_Channel1->CCR = DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_PL_1;   // 8-bit, periph -> mem
++    DMA1_Channel1->CCR |= DMA_CCR_EN;
++
++    DMA1_Channel2->CCR = 0;
++    DMA1_Channel2->CPAR = (uint32_t)&USART5->TDR;
++    DMA1_Channel2->CCR = DMA_CCR_MINC | DMA_CCR_DIR | DMA_CCR_PL_0;   // 8-bit, mem -> periph
++}
++
+ void uart5_init(void) {
+     RCC->AHBENR |= RCC_AHBENR_GPIOCEN | RCC_AHBENR_GPIODEN;
+ 
+@@ -111,21 +139,60 @@ void uart5_init(void) {
+     USART5->CR1 &= ~(USART_CR1_M0 | USART_CR1_M1 | USART_CR1_PCE | USART_CR1_OVER8);
+     USART5->CR2 &= ~USART_CR2_STOP;
+     USART5->BRR = 0x1A1; // 48 MHz / 115200 = 417
++    USART5->CR3 |= USART_CR3_DMAR | USART_CR3_DMAT;
+     USART5->CR1 |= USART_CR1_TE | USART_CR1_RE;
+     USART5->CR1 |= USART_CR1_UE;
+     while ((USART5->ISR & (USART_ISR_TEACK | USART_ISR_REACK)) != (USART_ISR_TEACK | USART_ISR_REACK))
+         ;
++    uart5_dma_init();
++}
++
++// Bytes received but not yet read. RX runs in circular DMA mode, so the hardware stores every byte
++// even while the main loop is busy (e.g. formatting telemetry); before, a byte that arrived during
++// a blocking print overran RDR and was lost, dropping that command.
++// Returns 1 and stores the next byte in *c, or 0 if nothing is waiting.
++static int uart5_getc(char *c) {
++    if (USART5->ISR & USART_ISR_ORE) {   // can't happen with DMA keeping up; counted in case it does
++        USART5->ICR = USART_ICR_ORECF;
++        u5_overruns++;
++    }
++    uint32_t head = U5_RX_SIZE - DMA1_Channel1->CNDTR;
++    if (head >= U5_RX_SIZE)
++        head = 0;
++    if (u5_rx_tail == head)
++        return 0;
++    *c = u5_rx[u5_rx_tail];
++    u5_rx_tail = (u5_rx_tail + 1) % U5_RX_SIZE;
++    return 1;
+ }
+ 
++// Start sending the buffer being filled if the TX DMA channel is idle. Call often (the main loops
++// do); uart5_puts() calls it too.
++static void uart5_tx_pump(void) {
++    if (u5_tx_fill == 0)
++        return;
++    if ((DMA1_Channel2->CCR & DMA_CCR_EN) && DMA1_Channel2->CNDTR != 0)
++        return;                          // previous buffer still going out
++    DMA1_Channel2->CCR &= ~DMA_CCR_EN;
++    DMA1_Channel2->CMAR = (uint32_t)u5_tx[u5_tx_cur];
++    DMA1_Channel2->CNDTR = u5_tx_fill;
++    DMA1_Channel2->CCR |= DMA_CCR_EN;
++    u5_tx_cur ^= 1;                      // fill the other buffer while this one is sent
++    u5_tx_fill = 0;
++}
++
++// Queue one byte; only waits if a whole buffer is queued behind the one being sent.
+ static void uart5_putc(char c) {
+-    while (!(USART5->ISR & USART_ISR_TXE))
+-        ;
+-    USART5->TDR = c;
++    while (u5_tx_fill >= U5_TX_SIZE)
++        uart5_tx_pump();
++    u5_tx[u5_tx_cur][u5_tx_fill++] = c;
+ }
+ 
++// Queue a string and return without waiting for it to be sent.
+ static void uart5_puts(const char *s) {
+     while (*s)
+         uart5_putc(*s++);
++    uart5_tx_pump();
+ }
+ 
+ // Sets the duty cycle of PC9 (TIM3 CH4); the other channels are untouched.
+@@ -141,12 +208,10 @@ void pwm_uart_loop(void) {
+     int n = 0;
+ 
+     for (;;) {
+-        if (USART5->ISR & USART_ISR_ORE)
+-            USART5->ICR = USART_ICR_ORECF;
+-        if (!(USART5->ISR & USART_ISR_RXNE))
++        uart5_tx_pump();
++        char c;
++        if (!uart5_getc(&c))
+             continue;
+-
+-        char c = USART5->RDR;
+         if (c != '\r' && c != '\n') {
+             if (n < CMD_MAX - 1)
+                 line[n] = c;
+@@ -439,20 +504,23 @@ void motor_uart_loop(void) {
+         if (mc_telemetry_due) {
+             mc_telemetry_due = 0;
+             char t[112];
+-            snprintf(t, sizeof t, "tgt=%.1f meas=%.1f duty=%.1f%% cap=%.1f%% cnt=%ld%s%s\r\n",
++            snprintf(t, sizeof t, "tgt=%.1f meas=%.1f duty=%.1f%% cap=%.1f%% cnt=%ld%s%s",
+                       mc_target_rpm, mc_measured_rpm, mc_output_pct, mc_duty_cap_pct,
+                       (long)(int32_t)TIM2->CNT,
+                       mc_open_ms_left > 0 ? " OPEN" : "",
+                       mc_fault_stall ? " FAULT:STALL" : "");
+             uart5_puts(t);
++            if (u5_overruns) {
++                snprintf(t, sizeof t, " ORE=%lu", (unsigned long)u5_overruns);
++                uart5_puts(t);
++            }
++            uart5_puts("\r\n");
+         }
+ 
+-        if (USART5->ISR & USART_ISR_ORE)
+-            USART5->ICR = USART_ICR_ORECF;
+-        if (!(USART5->ISR & USART_ISR_RXNE))
++        uart5_tx_pump();
++        char c;
++        if (!uart5_getc(&c))
+             continue;
+-
+-        char c = USART5->RDR;
+         if (c != '\r' && c != '\n') {
+             if (n < CMD_MAX - 1)
+                 line[n] = c;
