@@ -5,7 +5,7 @@ Live STL-27L point cloud + occupancy grid (matplotlib animation).
 Assumes the LiDAR is stationary at the grid origin (no odometry / SLAM), so the
 grid accumulates evidence from the same pose over time.
 
-Usage:    .venv/bin/python lidar_viz.py [--port /dev/ttyAMA0] [--res 0.05] [--size 16]
+Usage:    .venv/bin/python lidar_viz.py [--port /dev/ttyAMA2] [--res 0.05] [--size 16]
           .venv/bin/python lidar_viz.py --plan      # local costmap + A*, click to set goal
 Keys:     s = save map (map.pgm + map.yaml + map.npy)   r = reset grid   q = quit
 """
@@ -114,7 +114,7 @@ class OccupancyGrid:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", default="/dev/ttyAMA0")
+    ap.add_argument("--port", default="/dev/ttyAMA2")
     ap.add_argument("--res", type=float, default=0.05, help="grid cell size (m)")
     ap.add_argument("--size", type=float, default=16.0, help="grid side length (m)")
     ap.add_argument("--max-range", type=float, default=8.0, help="ignore returns beyond this (m)")

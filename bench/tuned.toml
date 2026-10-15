@@ -1,0 +1,71 @@
+# tuned.toml: baseline.toml + suggestion 3 (real-time priority for the code with deadlines).
+# rt_prio uses chrt (SCHED_FIFO); it works without sudo once setup_root_tuning.sh has installed the
+# rtprio/memlock limits and you've logged in again (check: ulimit -r  -> 90). Otherwise run with sudo.
+#
+# Benchmark configuration: which apps to run and how to launch them.
+# Copy this file and change the knobs per experiment, e.g. pinned.toml:
+#   cpus     = "3"            # taskset CPU list for the process (all threads)
+#   nice     = -10            # needs root (or CAP_SYS_NICE) for negative values
+#   rt_prio  = 50             # chrt -f <prio> (SCHED_FIFO), needs root
+#   env      = { OMP_NUM_THREADS = "2" }
+# Baseline = everything as it runs today: no pinning, default priority, default threads.
+
+[run]
+duration_s = 120          # measured window, after every worker reports ready
+ready_timeout_s = 120     # YOLO model load + camera warm-up can take a while
+label = "tuned"
+
+[workers.imu]
+python = "~/testing/.venv/bin/python"
+script = "w_imu.py"
+args = ["--hz", "100"]
+rt_prio = 80
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+[workers.gps]
+python = "~/testing/.venv/bin/python"
+script = "w_gps.py"
+args = ["--port", "/dev/ttyAMA0", "--baud", "230400", "--pps", "/dev/pps1"]
+rt_prio = 50
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+[workers.lidar]
+python = "~/testing/.venv/bin/python"
+script = "w_lidar.py"
+# UART2 RX on GPIO5 (pin 29). The 2026-10-08 baseline ran on the PIO UART (/dev/ttyPIO0, pin 15).
+args = ["--port", "/dev/ttyAMA2", "--baud", "921600"]
+rt_prio = 60
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+[workers.yolo]
+python = "~/stop-sign-eval/.venv/bin/python"
+script = "w_yolo.py"
+args = ["--device", "0", "--width", "640", "--height", "480", "--fps", "30"]
+
+[workers.cell]
+python = "~/testing/cellular_test/.venv/bin/python"
+script = "w_cell.py"
+args = ["--interval", "1.0"]
+env = { RT_TIMERSLACK_NS = "1" }
+# receive_demo.py (tmux "cellular", started by cron) owns the Notecard; pause it during the run.
+pre = ["~/testing/cellular_test/cellular_logger.sh stop"]
+post = ["~/testing/cellular_test/cellular_logger.sh start"]
+
+[workers.motor]
+python = "~/testing/.venv/bin/python"
+script = "w_motor.py"
+args = ["--port", "/dev/ttyUSB0", "--rate", "20", "--rpm", "0"]
+rt_prio = 70
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+# Probes: measure the system, not an app. Started once the apps are ready.
+[workers.jitter]
+probe = true
+exec = "./jitter"
+args = ["--interval-us", "1000"]
+
+[workers.sysmon]
+probe = true
+python = "/usr/bin/python3"
+script = "w_sysmon.py"
+args = ["--interval", "0.5"]
