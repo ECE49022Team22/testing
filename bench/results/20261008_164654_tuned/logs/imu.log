@@ -1,0 +1,65 @@
+$ chrt -f 80 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_imu.py --out /home/sdteam22/testing/bench/results/20261008_164654_tuned/imu.json --hz 100
+[imu] ready
+
+		********** Packet *************
+DBG::		 HEADER:
+DBG::		 Data Len: 2
+DBG::		 Channel: SHTP_COMMAND (0)
+DBG::		 Sequence number: 1
+
+DBG::		 Data:
+DBG::		[0x04] 0x01 0x02 
+		*******************************
+
+[imu] error: RuntimeError('Unprocessable Batch bytes', 2)
+
+		********** Packet *************
+DBG::		 HEADER:
+DBG::		 Data Len: 3
+DBG::		 Channel: SHTP_COMMAND (0)
+DBG::		 Sequence number: 2
+
+DBG::		 Data:
+DBG::		[0x04] 0x01 0x02 0x02 
+		*******************************
+
+[imu] error: RuntimeError('Unprocessable Batch bytes', 3)
+
+		********** Packet *************
+DBG::		 HEADER:
+DBG::		 Data Len: 4
+DBG::		 Channel: SHTP_COMMAND (0)
+DBG::		 Sequence number: 3
+
+DBG::		 Data:
+DBG::		[0x04] 0x01 0x02 0x02 0x02 
+		*******************************
+
+[imu] error: RuntimeError('Unprocessable Batch bytes', 4)
+
+		********** Packet *************
+DBG::		 HEADER:
+DBG::		 Data Len: 5
+DBG::		 Channel: SHTP_COMMAND (0)
+DBG::		 Sequence number: 4
+
+DBG::		 Data:
+DBG::		[0x04] 0x01 0x02 0x02 0x02 
+DBG::		[0x08] 0x02 
+		*******************************
+
+[imu] error: RuntimeError('Unprocessable Batch bytes', 5)
+
+		********** Packet *************
+DBG::		 HEADER:
+DBG::		 Data Len: 6
+DBG::		 Channel: SHTP_COMMAND (0)
+DBG::		 Sequence number: 5
+
+DBG::		 Data:
+DBG::		[0x04] 0x01 0x02 0x02 0x02 
+DBG::		[0x08] 0x02 0x02 
+		*******************************
+
+[imu] error: RuntimeError('Unprocessable Batch bytes', 6)
+[imu] wrote 102626 samples

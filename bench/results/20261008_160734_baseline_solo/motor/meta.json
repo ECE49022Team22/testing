@@ -1,0 +1,46 @@
+{
+ "t_go": 490.820263912,
+ "t_end": 520.820374587,
+ "duration_s": 30.000110674999974,
+ "workers": [
+  "motor",
+  "jitter",
+  "sysmon"
+ ],
+ "proc": {
+  "motor": {
+   "cpu_pct": 0.866663469400685,
+   "invol_cs_per_s": 1.0999959419316385,
+   "vol_cs_per_s": 77.53304730099974,
+   "threads": 2,
+   "cpus_seen": [
+    0,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_motor.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/motor/motor.json --port /dev/ttyUSB0 --rate 20 --rpm 0"
+  },
+  "jitter": {
+   "cpu_pct": 1.4333280455472865,
+   "invol_cs_per_s": 0.5666645761466017,
+   "vol_cs_per_s": 3957.4187337560584,
+   "threads": 5,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/motor/jitter.json --interval-us 1000"
+  },
+  "sysmon": {
+   "cpu_pct": 0.13333284144625923,
+   "invol_cs_per_s": 0.166666051807824,
+   "vol_cs_per_s": 4.966648343873156,
+   "threads": 1,
+   "cpus_seen": [
+    2
+   ],
+   "cmd": "/usr/bin/python3 -u /home/sdteam22/testing/bench/w_sysmon.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/motor/sysmon.json --interval 0.5"
+  }
+ }
+}

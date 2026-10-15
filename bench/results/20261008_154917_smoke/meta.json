@@ -1,0 +1,83 @@
+{
+ "t_go": 2703.928066979,
+ "t_end": 2718.928169527,
+ "duration_s": 15.000102548000086,
+ "workers": [
+  "imu",
+  "gps",
+  "yolo",
+  "motor",
+  "jitter",
+  "sysmon"
+ ],
+ "proc": {
+  "imu": {
+   "cpu_pct": 19.133202528556364,
+   "invol_cs_per_s": 2572.182415189164,
+   "vol_cs_per_s": 1801.8543482293428,
+   "threads": 4,
+   "cpus_seen": [
+    0,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_imu.py --out /home/sdteam22/testing/bench/results/20261008_154917_smoke/imu.json --hz 100"
+  },
+  "gps": {
+   "cpu_pct": 0.8666607417116122,
+   "invol_cs_per_s": 7.266616988197365,
+   "vol_cs_per_s": 54.332961884228,
+   "threads": 1,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "/home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_gps.py --out /home/sdteam22/testing/bench/results/20261008_154917_smoke/gps.json --port /dev/ttyAMA0 --baud 230400 --pps /dev/pps1"
+  },
+  "yolo": {
+   "cpu_pct": 200.73196102258962,
+   "invol_cs_per_s": 1752.8546832171862,
+   "vol_cs_per_s": 870.8607129983685,
+   "threads": 8,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/stop-sign-eval/.venv/bin/python -u /home/sdteam22/testing/bench/w_yolo.py --out /home/sdteam22/testing/bench/results/20261008_154917_smoke/yolo.json --device 0 --width 640 --height 480 --fps 30"
+  },
+  "motor": {
+   "cpu_pct": 1.1999917962160789,
+   "invol_cs_per_s": 14.399901554592942,
+   "vol_cs_per_s": 68.66619722792005,
+   "threads": 2,
+   "cpus_seen": [
+    0
+   ],
+   "cmd": "/home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_motor.py --out /home/sdteam22/testing/bench/results/20261008_154917_smoke/motor.json --port /dev/ttyUSB0 --rate 20 --rpm 0"
+  },
+  "jitter": {
+   "cpu_pct": 4.733300973963421,
+   "invol_cs_per_s": 4.199971286756275,
+   "vol_cs_per_s": 3920.3065320270275,
+   "threads": 5,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261008_154917_smoke/jitter.json --interval-us 1000"
+  },
+  "sysmon": {
+   "cpu_pct": 0.13333242180178648,
+   "invol_cs_per_s": 0.799994530810719,
+   "vol_cs_per_s": 5.599961715675033,
+   "threads": 1,
+   "cpus_seen": [
+    0
+   ],
+   "cmd": "/usr/bin/python3 -u /home/sdteam22/testing/bench/w_sysmon.py --out /home/sdteam22/testing/bench/results/20261008_154917_smoke/sysmon.json --interval 0.5"
+  }
+ }
+}

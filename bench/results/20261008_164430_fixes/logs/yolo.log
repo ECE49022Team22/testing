@@ -1,0 +1,3 @@
+$ /home/sdteam22/stop-sign-eval/.venv/bin/python -u /home/sdteam22/testing/bench/w_yolo.py --out /home/sdteam22/testing/bench/results/20261008_164430_fixes/yolo.json --device 0 --width 640 --height 480 --fps 30
+[yolo] ready
+[yolo] wrote 1147 samples

@@ -1,0 +1,45 @@
+{
+ "t_go": 350.757629954,
+ "t_end": 380.757749412,
+ "duration_s": 30.00011945800003,
+ "workers": [
+  "gps",
+  "jitter",
+  "sysmon"
+ ],
+ "proc": {
+  "gps": {
+   "cpu_pct": 0.8666632156715186,
+   "invol_cs_per_s": 0.233332404219255,
+   "vol_cs_per_s": 71.93304690073604,
+   "threads": 2,
+   "cpus_seen": [
+    0
+   ],
+   "cmd": "/home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_gps.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/gps/gps.json --port /dev/ttyAMA0 --baud 230400 --pps /dev/pps1"
+  },
+  "jitter": {
+   "cpu_pct": 1.4333276259182808,
+   "invol_cs_per_s": 0.49999800904126074,
+   "vol_cs_per_s": 3959.0842351905108,
+   "threads": 5,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/gps/jitter.json --interval-us 1000"
+  },
+  "sysmon": {
+   "cpu_pct": 0.09999960180825214,
+   "invol_cs_per_s": 0.19999920361650428,
+   "vol_cs_per_s": 4.966646889809857,
+   "threads": 1,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "/usr/bin/python3 -u /home/sdteam22/testing/bench/w_sysmon.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/gps/sysmon.json --interval 0.5"
+  }
+ }
+}

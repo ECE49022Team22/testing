@@ -1,0 +1,20 @@
+{
+ "t_go": 3165.549480507,
+ "t_end": 3175.549613579,
+ "duration_s": 10.000133071999699,
+ "workers": [
+  "cell"
+ ],
+ "proc": {
+  "cell": {
+   "cpu_pct": 0.09999866929771102,
+   "invol_cs_per_s": 0.5999920157862656,
+   "vol_cs_per_s": 16.99977378061086,
+   "threads": 1,
+   "cpus_seen": [
+    2
+   ],
+   "cmd": "/home/sdteam22/testing/cellular_test/.venv/bin/python -u /home/sdteam22/testing/bench/w_cell.py --out /home/sdteam22/testing/bench/results/20261008_155703_celltest/cell.json --interval 1.0"
+  }
+ }
+}

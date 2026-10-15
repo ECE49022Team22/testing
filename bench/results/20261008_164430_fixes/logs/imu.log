@@ -1,0 +1,3 @@
+$ /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_imu.py --out /home/sdteam22/testing/bench/results/20261008_164430_fixes/imu.json --hz 100
+[imu] ready
+[imu] wrote 99029 samples

@@ -1,0 +1,45 @@
+{
+ "t_go": 383.671492558,
+ "t_end": 413.67159727,
+ "duration_s": 30.000104711999995,
+ "workers": [
+  "lidar",
+  "jitter",
+  "sysmon"
+ ],
+ "proc": {
+  "lidar": {
+   "cpu_pct": 24.33324840056312,
+   "invol_cs_per_s": 54.8331419437347,
+   "vol_cs_per_s": 10077.998157088567,
+   "threads": 1,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "/home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_lidar.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/lidar/lidar.json --port /dev/ttyPIO0 --baud 921600"
+  },
+  "jitter": {
+   "cpu_pct": 1.3666618964699835,
+   "invol_cs_per_s": 9.99996509612183,
+   "vol_cs_per_s": 3962.2528368193657,
+   "threads": 5,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/lidar/jitter.json --interval-us 1000"
+  },
+  "sysmon": {
+   "cpu_pct": 0.06666643397414555,
+   "invol_cs_per_s": 0.9333300756380375,
+   "vol_cs_per_s": 4.899982897099696,
+   "threads": 1,
+   "cpus_seen": [
+    3
+   ],
+   "cmd": "/usr/bin/python3 -u /home/sdteam22/testing/bench/w_sysmon.py --out /home/sdteam22/testing/bench/results/20261008_160734_baseline_solo/lidar/sysmon.json --interval 0.5"
+  }
+ }
+}
