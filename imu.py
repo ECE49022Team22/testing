@@ -17,7 +17,7 @@ the chip pulls INT low, and each event carries a kernel timestamp. A watchdog ha
 chip if samples stop (it can stop signalling INT for good if INT isn't serviced in time).
 Requires: dtoverlay=spi0-0cs in /boot/firmware/config.txt (SPI0 with CS left to us)
           pip install adafruit-circuitpython-bno08x adafruit-blinka
-Usage:    .venv/bin/python imu.py [--hz 100] [--rt 80]
+Usage:    .venv/bin/python imu.py [--hz 100] [--rt 49]
 """
 import argparse
 import math
@@ -88,6 +88,9 @@ class GpiodInt:
         self._req.release()
 
 
+MAX_PACKET_LEN = 1024          # bytes; the largest BNO085 packet (advertisement) is ~280
+
+
 class PiBNO08X_SPI(BNO08X_SPI):
     """adafruit_bno08x's SPI transport, fixed for the Pi 5.
 
@@ -104,6 +107,7 @@ class PiBNO08X_SPI(BNO08X_SPI):
     def __init__(self, spi_bus, cspin, intpin, resetpin, wakepin, baudrate=1_000_000, debug=False):
         self._wake = wakepin
         self._wake.switch_to_output(value=True)
+        self.bad_headers = 0           # packets dropped because their length was implausible
         super().__init__(spi_bus, cspin, intpin, resetpin, baudrate=baudrate, debug=debug)
 
     def _wait_int(self, timeout):
@@ -148,6 +152,12 @@ class PiBNO08X_SPI(BNO08X_SPI):
         with self._spi as spi:
             spi.write_readinto(bytearray(out[:4]) if out else bytearray(4), hdr_in)
             in_len = (hdr_in[0] | hdr_in[1] << 8) & 0x7FFF
+            if in_len > MAX_PACKET_LEN:
+                # A corrupted header can claim up to 32 KB: reading that at 1 MHz takes ~260 ms with CS
+                # held (seen once in a 10-minute soak: a 292 ms read, then a watchdog reset). Real BNO085
+                # packets are a few hundred bytes, so drop it after the 4 header bytes.
+                self.bad_headers += 1
+                in_len = 0
             total = max(in_len, out_len)
             if total > len(self._data_buffer):
                 self._data_buffer = bytearray(total)
@@ -323,7 +333,9 @@ def main():
     ap = argparse.ArgumentParser(description="Print BNO085 readings as soon as each sample arrives.")
     ap.add_argument("--hz", type=float, default=100, help="report rate to request (default %(default)s, max ~200)")
     ap.add_argument("--watchdog", type=float, default=0.2, help="reset the chip after this many s without data")
-    ap.add_argument("--rt", type=int, default=0, help="SCHED_FIFO priority (needs rtprio limit or root)")
+    ap.add_argument("--rt", type=int, default=0,
+                    help="SCHED_FIFO priority (needs rtprio limit or root). Keep it below 50: the kernel "
+                         "thread that delivers the INT edge runs at 50, and outranking it delays our own wakeups")
     args = ap.parse_args()
     if args.rt:
         import rt_tune

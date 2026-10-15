@@ -238,7 +238,7 @@ def to_markdown(res):
     for name, w in res["workers"].items():
         for k, v in w["counters"].items():
             if k in ("errors", "crc_errors", "timeouts", "overruns", "bad_lines", "read_failures",
-                     "err_replies", "fault_lines", "bad_timestamps_passed_crc", "stalls", "rejected", "pps_pulses", "gga_with_fix", "frames_with_stop_sign"):
+                     "err_replies", "fault_lines", "bad_timestamps_passed_crc", "stalls", "rejected", "bad_headers", "pps_pulses", "gga_with_fix", "frames_with_stop_sign"):
                 cnt.append(f"| {name} | {k} | {v} |")
     if cnt:
         L += ["", "## Event counters (whole process lifetime)", "", "| worker | counter | count |",

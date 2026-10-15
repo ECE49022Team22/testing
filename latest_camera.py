@@ -27,7 +27,10 @@ class LatestFrameCamera:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         cap.set(cv2.CAP_PROP_FPS, fps)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # 2, not 1: with a single V4L2 buffer the driver has nowhere to put the next frame while we
+        # decode this one, so it drops every other frame (16 fps instead of 30). The reader thread
+        # drains the queue continuously, so the extra buffer doesn't make frames older (34 ms either way).
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
         self.cap = cap
         self.size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
         self.fps = cap.get(cv2.CAP_PROP_FPS)

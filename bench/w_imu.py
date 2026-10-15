@@ -58,6 +58,7 @@ def main():
             last_sample = t_done
             rec.count("samples")
     finally:
+        rec.counters["bad_headers"] = bno.bad_headers
         rec.dump()
         close_imu(bno)
 
