@@ -32,16 +32,19 @@ Configs, in the order they were tried (each adds to the previous one):
 | `tuned.toml` | SCHED_FIFO for IMU/motor/LiDAR/GPS, timer slack 1 ns, mlockall (suggestion 3) |
 | `yolo.toml` | YOLO on NCNN 640 px, newest frame, 2 threads, passive OpenMP waits (suggestion 1) |
 | `cores.toml` | sensors pinned to core 1, YOLO to 2-3, rest to 0 (suggestion 2; with `setup_root_cores.sh` for isolation) |
+| `hailo.toml` | YOLO on the AI HAT+ (Hailo-8L yolov8s, conf 0.6) instead of the CPU |
+| `final.toml` | sensor RT priorities moved below 50, under the kernel IRQ threads (fixes a priority inversion) |
 
 Reports: `BASELINE_REPORT.md` (first measurement + all suggestions), `ROUND1_RESULTS.md` (3, 4, 5, 6),
-`ROUND2_RESULTS.md` (1, 2). Root setup scripts: `setup_root.sh` (EEPROM, PPS), `setup_root_tuning.sh`
-(UART2, FTDI latency, RT limits), `setup_root_cores.sh` (isolcpus, IRQ affinity, performance governor).
+`ROUND2_RESULTS.md` (1, 2), `ROUND3_AI_HAT.md` (AI HAT+, final system, full progression and project fit). Root setup scripts: `setup_root.sh` (EEPROM, PPS), `setup_root_tuning.sh`
+(UART2, FTDI latency, RT limits), `setup_root_cores.sh` (isolcpus, IRQ affinity, performance governor),
+`setup_root_hailo.sh` (force PCIe on for the AI HAT+, install hailo-all).
 Raw samples are stored as `<worker>.json.gz`; `summarize.py` reads them directly.
 
 Also here: `external/` holds the two changes made in other repos for these rounds (STM32 USART5 DMA
 firmware for `pwm-lab5`, NCNN/thread support in `stop-sign-eval/detectors.py`), as full files and patches,
 with apply instructions. `tools/` has `test_lidar_parser.py` (new vs original LiDAR parser) and
-`yolo_speed.py` (YOLO inference timing).
+`yolo_speed.py` (YOLO inference timing), `eval_hailo.py` (accuracy of the Hailo model with `evaluate.py`).
 
 Per-worker knobs in the TOML: `cpus` (taskset), `nice`, `rt_prio` (SCHED_FIFO), `env`, `pre`/`post`
 commands. `rt_prio` works without sudo once `setup_root_tuning.sh` has installed the rtprio limit

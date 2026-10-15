@@ -1,0 +1,21 @@
+{
+ "t_go": 1818.772592812,
+ "t_end": 1838.772701688,
+ "duration_s": 20.000108876000013,
+ "workers": [
+  "yolo"
+ ],
+ "proc": {
+  "yolo": {
+   "cpu_pct": 17.449905006207114,
+   "invol_cs_per_s": 44.5497574800302,
+   "vol_cs_per_s": 549.9470061984873,
+   "threads": 18,
+   "cpus_seen": [
+    2,
+    3
+   ],
+   "cmd": "taskset -c 2,3 /home/sdteam22/stop-sign-eval/.venv/bin/python -u /home/sdteam22/testing/bench/w_yolo.py --out /home/sdteam22/testing/bench/results/20261015_164831_hailo_smoke2/yolo.json --device 0 --width 640 --height 480 --fps 30 --latest --hailo /usr/share/hailo-models/yolov8s_h8l.hef --conf 0.6"
+  }
+ }
+}

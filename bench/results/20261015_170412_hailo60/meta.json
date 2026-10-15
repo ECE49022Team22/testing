@@ -1,0 +1,101 @@
+{
+ "t_go": 2761.338015806,
+ "t_end": 2881.338331904,
+ "duration_s": 120.00031609799998,
+ "workers": [
+  "imu",
+  "gps",
+  "lidar",
+  "yolo",
+  "cell",
+  "motor",
+  "jitter",
+  "sysmon"
+ ],
+ "proc": {
+  "imu": {
+   "cpu_pct": 16.741622566721585,
+   "invol_cs_per_s": 0.0,
+   "vol_cs_per_s": 1015.1389926382893,
+   "threads": 4,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "taskset -c 1 chrt -f 80 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_imu.py --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/imu.json --hz 100"
+  },
+  "gps": {
+   "cpu_pct": 0.9749974317105153,
+   "invol_cs_per_s": 61.52483793434816,
+   "vol_cs_per_s": 61.25817197011965,
+   "threads": 2,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "taskset -c 1 chrt -f 50 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_gps.py --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/gps.json --port /dev/ttyAMA0 --baud 230400 --pps /dev/pps1"
+  },
+  "lidar": {
+   "cpu_pct": 10.616638700847835,
+   "invol_cs_per_s": 175.00787233634645,
+   "vol_cs_per_s": 4553.938004244207,
+   "threads": 1,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "taskset -c 1 chrt -f 60 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_lidar.py --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/lidar.json --port /dev/ttyAMA2 --baud 921600"
+  },
+  "yolo": {
+   "cpu_pct": 35.541573044832035,
+   "invol_cs_per_s": 377.42400580855514,
+   "vol_cs_per_s": 1155.6636224753356,
+   "threads": 18,
+   "cpus_seen": [
+    2,
+    3
+   ],
+   "cmd": "taskset -c 2,3 /home/sdteam22/stop-sign-eval/.venv/bin/python -u /home/sdteam22/testing/bench/w_yolo.py --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/yolo.json --device 0 --width 640 --height 480 --fps 60 --latest --hailo /usr/share/hailo-models/yolov8s_h8l.hef --conf 0.6"
+  },
+  "cell": {
+   "cpu_pct": 0.158332916260682,
+   "invol_cs_per_s": 0.7916645813034099,
+   "vol_cs_per_s": 17.466620656967866,
+   "threads": 1,
+   "cpus_seen": [
+    0
+   ],
+   "cmd": "taskset -c 0 /home/sdteam22/testing/cellular_test/.venv/bin/python -u /home/sdteam22/testing/bench/w_cell.py --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/cell.json --interval 1.0"
+  },
+  "motor": {
+   "cpu_pct": 1.4083296235818556,
+   "invol_cs_per_s": 20.416612886245836,
+   "vol_cs_per_s": 134.75797836060465,
+   "threads": 2,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "taskset -c 1 chrt -f 70 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_motor.py --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/motor.json --port /dev/ttyUSB0 --rate 20 --rpm 0"
+  },
+  "jitter": {
+   "cpu_pct": 2.824992558545852,
+   "invol_cs_per_s": 57.099849590431205,
+   "vol_cs_per_s": 3935.8396324080327,
+   "threads": 5,
+   "cpus_seen": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "cmd": "/home/sdteam22/testing/bench/./jitter --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/jitter.json --interval-us 1000"
+  },
+  "sysmon": {
+   "cpu_pct": 0.16666622764282316,
+   "invol_cs_per_s": 1.166663593499762,
+   "vol_cs_per_s": 7.891645878887676,
+   "threads": 1,
+   "cpus_seen": [
+    0
+   ],
+   "cmd": "taskset -c 0 /usr/bin/python3 -u /home/sdteam22/testing/bench/w_sysmon.py --out /home/sdteam22/testing/bench/results/20261015_170412_hailo60/sysmon.json --interval 0.5"
+  }
+ }
+}

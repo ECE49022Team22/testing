@@ -1,0 +1,3 @@
+$ taskset -c 1 chrt -f 48 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_motor.py --out /home/sdteam22/testing/bench/results/20261015_171114_final_soak/motor.json --port /dev/ttyUSB0 --rate 20 --rpm 0
+[motor] ready
+[motor] wrote 18082 samples

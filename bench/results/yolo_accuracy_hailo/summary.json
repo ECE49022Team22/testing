@@ -1,0 +1,641 @@
+{
+ "scores": {
+  "yolo26n": {
+   "real": {
+    "detection_rate": 0.9896907216494846,
+    "n_pos": 97,
+    "hits": 96,
+    "detection_ci95": [
+     0.9438936439364473,
+     0.9981778821004262
+    ],
+    "false_alarm_rate": 0.01,
+    "n_neg": 100,
+    "false_alarms": 1,
+    "false_alarm_ci95": [
+     0.0017673865655472645,
+     0.0544875247609346
+    ],
+    "accuracy": 0.9898477157360406
+   },
+   "real_threshold_sweep": {
+    "0.1": {
+     "detection_rate": 0.9896907216494846,
+     "false_alarm_rate": 0.06
+    },
+    "0.25": {
+     "detection_rate": 0.9896907216494846,
+     "false_alarm_rate": 0.01
+    },
+    "0.4": {
+     "detection_rate": 0.979381443298969,
+     "false_alarm_rate": 0.01
+    },
+    "0.5": {
+     "detection_rate": 0.9587628865979382,
+     "false_alarm_rate": 0.0
+    },
+    "0.6": {
+     "detection_rate": 0.9587628865979382,
+     "false_alarm_rate": 0.0
+    },
+    "0.7": {
+     "detection_rate": 0.9278350515463918,
+     "false_alarm_rate": 0.0
+    }
+   },
+   "size_sweep": {
+    "12": 0.0,
+    "16": 0.05,
+    "20": 0.3,
+    "24": 0.825,
+    "28": 0.925,
+    "32": 1.0,
+    "40": 1.0,
+    "48": 1.0,
+    "56": 1.0,
+    "64": 1.0,
+    "80": 1.0,
+    "100": 1.0,
+    "128": 1.0
+   },
+   "condition": {
+    "angled@40": 1.0,
+    "angled@80": 1.0,
+    "rotated@40": 0.95,
+    "rotated@80": 1.0,
+    "dark@40": 0.975,
+    "dark@80": 1.0,
+    "overexposed@40": 1.0,
+    "overexposed@80": 1.0,
+    "motion_blur@40": 0.725,
+    "motion_blur@80": 0.975,
+    "occluded@40": 0.325,
+    "occluded@80": 1.0,
+    "frontal@40": 1.0,
+    "frontal@80": 1.0
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.6833333333333333,
+    "red_disc": 0.65,
+    "red_triangle": 0.0
+   },
+   "hard_negative_conf0.5": {
+    "no_entry_disc": 0.38333333333333336,
+    "red_disc": 0.26666666666666666,
+    "red_triangle": 0.0
+   }
+  },
+  "yolo11n": {
+   "real": {
+    "detection_rate": 0.979381443298969,
+    "n_pos": 97,
+    "hits": 95,
+    "detection_ci95": [
+     0.9279110074824457,
+     0.9943274337957568
+    ],
+    "false_alarm_rate": 0.03,
+    "n_neg": 100,
+    "false_alarms": 3,
+    "false_alarm_ci95": [
+     0.010254338223414816,
+     0.08452078080402699
+    ],
+    "accuracy": 0.9746192893401016
+   },
+   "real_threshold_sweep": {
+    "0.1": {
+     "detection_rate": 1.0,
+     "false_alarm_rate": 0.1
+    },
+    "0.25": {
+     "detection_rate": 0.979381443298969,
+     "false_alarm_rate": 0.03
+    },
+    "0.4": {
+     "detection_rate": 0.9690721649484536,
+     "false_alarm_rate": 0.03
+    },
+    "0.5": {
+     "detection_rate": 0.9690721649484536,
+     "false_alarm_rate": 0.02
+    },
+    "0.6": {
+     "detection_rate": 0.9690721649484536,
+     "false_alarm_rate": 0.01
+    },
+    "0.7": {
+     "detection_rate": 0.9587628865979382,
+     "false_alarm_rate": 0.0
+    }
+   },
+   "size_sweep": {
+    "12": 0.05,
+    "16": 0.075,
+    "20": 0.4,
+    "24": 0.75,
+    "28": 0.9,
+    "32": 1.0,
+    "40": 1.0,
+    "48": 1.0,
+    "56": 1.0,
+    "64": 1.0,
+    "80": 1.0,
+    "100": 1.0,
+    "128": 1.0
+   },
+   "condition": {
+    "angled@40": 0.95,
+    "angled@80": 1.0,
+    "rotated@40": 0.975,
+    "rotated@80": 1.0,
+    "dark@40": 1.0,
+    "dark@80": 1.0,
+    "overexposed@40": 1.0,
+    "overexposed@80": 1.0,
+    "motion_blur@40": 0.5,
+    "motion_blur@80": 0.925,
+    "occluded@40": 0.2,
+    "occluded@80": 0.775,
+    "frontal@40": 1.0,
+    "frontal@80": 1.0
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.9,
+    "red_disc": 0.65,
+    "red_triangle": 0.0
+   },
+   "hard_negative_conf0.5": {
+    "no_entry_disc": 0.6666666666666666,
+    "red_disc": 0.38333333333333336,
+    "red_triangle": 0.0
+   }
+  },
+  "rules": {
+   "real": {
+    "detection_rate": 0.4845360824742268,
+    "n_pos": 97,
+    "hits": 47,
+    "detection_ci95": [
+     0.3875798918772146,
+     0.5826704809847787
+    ],
+    "false_alarm_rate": 0.01,
+    "n_neg": 100,
+    "false_alarms": 1,
+    "false_alarm_ci95": [
+     0.0017673865655472645,
+     0.0544875247609346
+    ],
+    "accuracy": 0.7411167512690355
+   },
+   "size_sweep": {
+    "12": 0.0,
+    "16": 0.0,
+    "20": 0.0,
+    "24": 0.0,
+    "28": 0.0,
+    "32": 0.05,
+    "40": 0.8,
+    "48": 0.725,
+    "56": 0.675,
+    "64": 0.9,
+    "80": 0.825,
+    "100": 0.85,
+    "128": 0.975
+   },
+   "condition": {
+    "angled@40": 0.0,
+    "angled@80": 0.0,
+    "rotated@40": 0.925,
+    "rotated@80": 0.85,
+    "dark@40": 0.075,
+    "dark@80": 0.125,
+    "overexposed@40": 0.0,
+    "overexposed@80": 0.0,
+    "motion_blur@40": 0.8,
+    "motion_blur@80": 0.95,
+    "occluded@40": 0.0,
+    "occluded@80": 0.0,
+    "frontal@40": 0.8,
+    "frontal@80": 0.825
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.9333333333333333,
+    "red_disc": 0.9333333333333333,
+    "red_triangle": 0.0
+   }
+  },
+  "rules_a150": {
+   "real": {
+    "detection_rate": 0.5773195876288659,
+    "n_pos": 97,
+    "hits": 56,
+    "detection_ci95": [
+     0.4779127957568308,
+     0.6708353399332019
+    ],
+    "false_alarm_rate": 0.12,
+    "n_neg": 100,
+    "false_alarms": 12,
+    "false_alarm_ci95": [
+     0.06999337365267776,
+     0.19812268002908368
+    ],
+    "accuracy": 0.7309644670050761
+   },
+   "size_sweep": {
+    "12": 0.0,
+    "16": 0.6,
+    "20": 0.9,
+    "24": 0.875,
+    "28": 0.9,
+    "32": 0.85,
+    "40": 0.8,
+    "48": 0.725,
+    "56": 0.675,
+    "64": 0.9,
+    "80": 0.825,
+    "100": 0.85,
+    "128": 0.975
+   },
+   "condition": {
+    "angled@40": 0.0,
+    "angled@80": 0.0,
+    "rotated@40": 0.925,
+    "rotated@80": 0.85,
+    "dark@40": 0.1,
+    "dark@80": 0.125,
+    "overexposed@40": 0.0,
+    "overexposed@80": 0.0,
+    "motion_blur@40": 0.8,
+    "motion_blur@80": 0.95,
+    "occluded@40": 0.0,
+    "occluded@80": 0.0,
+    "frontal@40": 0.8,
+    "frontal@80": 0.825
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.9333333333333333,
+    "red_disc": 0.9333333333333333,
+    "red_triangle": 0.0
+   }
+  },
+  "yolo_ft4": {
+   "real": {
+    "detection_rate": 0.9896907216494846,
+    "n_pos": 97,
+    "hits": 96,
+    "detection_ci95": [
+     0.9438936439364473,
+     0.9981778821004262
+    ],
+    "false_alarm_rate": 0.08,
+    "n_neg": 100,
+    "false_alarms": 8,
+    "false_alarm_ci95": [
+     0.04109296948581091,
+     0.14998266879403072
+    ],
+    "accuracy": 0.9543147208121827
+   },
+   "real_threshold_sweep": {
+    "0.1": {
+     "detection_rate": 0.9896907216494846,
+     "false_alarm_rate": 0.1
+    },
+    "0.25": {
+     "detection_rate": 0.9896907216494846,
+     "false_alarm_rate": 0.08
+    },
+    "0.4": {
+     "detection_rate": 0.9896907216494846,
+     "false_alarm_rate": 0.05
+    },
+    "0.5": {
+     "detection_rate": 0.979381443298969,
+     "false_alarm_rate": 0.04
+    },
+    "0.6": {
+     "detection_rate": 0.979381443298969,
+     "false_alarm_rate": 0.01
+    },
+    "0.7": {
+     "detection_rate": 0.9690721649484536,
+     "false_alarm_rate": 0.01
+    }
+   },
+   "size_sweep": {
+    "12": 0.1,
+    "16": 0.275,
+    "20": 0.775,
+    "24": 0.975,
+    "28": 1.0,
+    "32": 1.0,
+    "40": 1.0,
+    "48": 1.0,
+    "56": 1.0,
+    "64": 1.0,
+    "80": 1.0,
+    "100": 1.0,
+    "128": 1.0
+   },
+   "condition": {
+    "angled@40": 1.0,
+    "angled@80": 1.0,
+    "rotated@40": 1.0,
+    "rotated@80": 1.0,
+    "dark@40": 1.0,
+    "dark@80": 1.0,
+    "overexposed@40": 1.0,
+    "overexposed@80": 1.0,
+    "motion_blur@40": 0.875,
+    "motion_blur@80": 1.0,
+    "occluded@40": 0.75,
+    "occluded@80": 1.0,
+    "frontal@40": 1.0,
+    "frontal@80": 1.0
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.9666666666666667,
+    "red_disc": 0.36666666666666664,
+    "red_triangle": 0.0
+   },
+   "hard_negative_conf0.5": {
+    "no_entry_disc": 0.5666666666666667,
+    "red_disc": 0.08333333333333333,
+    "red_triangle": 0.0
+   }
+  },
+  "yolo_ft1": {
+   "real": {
+    "detection_rate": 0.9896907216494846,
+    "n_pos": 97,
+    "hits": 96,
+    "detection_ci95": [
+     0.9438936439364473,
+     0.9981778821004262
+    ],
+    "false_alarm_rate": 0.02,
+    "n_neg": 100,
+    "false_alarms": 2,
+    "false_alarm_ci95": [
+     0.005501852234968185,
+     0.07001316294199365
+    ],
+    "accuracy": 0.9847715736040609
+   },
+   "real_threshold_sweep": {
+    "0.1": {
+     "detection_rate": 0.9896907216494846,
+     "false_alarm_rate": 0.08
+    },
+    "0.25": {
+     "detection_rate": 0.9896907216494846,
+     "false_alarm_rate": 0.02
+    },
+    "0.4": {
+     "detection_rate": 0.979381443298969,
+     "false_alarm_rate": 0.01
+    },
+    "0.5": {
+     "detection_rate": 0.9587628865979382,
+     "false_alarm_rate": 0.0
+    },
+    "0.6": {
+     "detection_rate": 0.9587628865979382,
+     "false_alarm_rate": 0.0
+    },
+    "0.7": {
+     "detection_rate": 0.9278350515463918,
+     "false_alarm_rate": 0.0
+    }
+   },
+   "size_sweep": {
+    "12": 0.0,
+    "16": 0.05,
+    "20": 0.35,
+    "24": 0.8,
+    "28": 0.925,
+    "32": 1.0,
+    "40": 1.0,
+    "48": 1.0,
+    "56": 1.0,
+    "64": 1.0,
+    "80": 1.0,
+    "100": 1.0,
+    "128": 1.0
+   },
+   "condition": {
+    "angled@40": 1.0,
+    "angled@80": 1.0,
+    "rotated@40": 0.975,
+    "rotated@80": 1.0,
+    "dark@40": 0.975,
+    "dark@80": 1.0,
+    "overexposed@40": 1.0,
+    "overexposed@80": 1.0,
+    "motion_blur@40": 0.825,
+    "motion_blur@80": 0.975,
+    "occluded@40": 0.375,
+    "occluded@80": 1.0,
+    "frontal@40": 1.0,
+    "frontal@80": 1.0
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.9,
+    "red_disc": 0.7,
+    "red_triangle": 0.0
+   },
+   "hard_negative_conf0.5": {
+    "no_entry_disc": 0.4666666666666667,
+    "red_disc": 0.4,
+    "red_triangle": 0.0
+   }
+  },
+  "yolo_ft2": {
+   "real": {
+    "detection_rate": 0.9587628865979382,
+    "n_pos": 97,
+    "hits": 93,
+    "detection_ci95": [
+     0.8987232470071496,
+     0.983849024753711
+    ],
+    "false_alarm_rate": 0.01,
+    "n_neg": 100,
+    "false_alarms": 1,
+    "false_alarm_ci95": [
+     0.0017673865655472645,
+     0.0544875247609346
+    ],
+    "accuracy": 0.9746192893401016
+   },
+   "real_threshold_sweep": {
+    "0.1": {
+     "detection_rate": 0.9690721649484536,
+     "false_alarm_rate": 0.03
+    },
+    "0.25": {
+     "detection_rate": 0.9587628865979382,
+     "false_alarm_rate": 0.01
+    },
+    "0.4": {
+     "detection_rate": 0.9381443298969072,
+     "false_alarm_rate": 0.01
+    },
+    "0.5": {
+     "detection_rate": 0.9175257731958762,
+     "false_alarm_rate": 0.0
+    },
+    "0.6": {
+     "detection_rate": 0.8865979381443299,
+     "false_alarm_rate": 0.0
+    },
+    "0.7": {
+     "detection_rate": 0.8762886597938144,
+     "false_alarm_rate": 0.0
+    }
+   },
+   "size_sweep": {
+    "12": 0.0,
+    "16": 0.0,
+    "20": 0.0,
+    "24": 0.075,
+    "28": 0.35,
+    "32": 0.85,
+    "40": 1.0,
+    "48": 0.975,
+    "56": 1.0,
+    "64": 1.0,
+    "80": 1.0,
+    "100": 1.0,
+    "128": 1.0
+   },
+   "condition": {
+    "angled@40": 0.65,
+    "angled@80": 1.0,
+    "rotated@40": 0.875,
+    "rotated@80": 1.0,
+    "dark@40": 0.925,
+    "dark@80": 1.0,
+    "overexposed@40": 0.975,
+    "overexposed@80": 1.0,
+    "motion_blur@40": 0.45,
+    "motion_blur@80": 0.975,
+    "occluded@40": 0.025,
+    "occluded@80": 0.825,
+    "frontal@40": 1.0,
+    "frontal@80": 1.0
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.7333333333333333,
+    "red_disc": 0.6166666666666667,
+    "red_triangle": 0.0
+   },
+   "hard_negative_conf0.5": {
+    "no_entry_disc": 0.3333333333333333,
+    "red_disc": 0.38333333333333336,
+    "red_triangle": 0.0
+   }
+  },
+  "yolo_ft3": {
+   "real": {
+    "detection_rate": 0.9072164948453608,
+    "n_pos": 97,
+    "hits": 88,
+    "detection_ci95": [
+     0.8329895046109212,
+     0.9504173433565841
+    ],
+    "false_alarm_rate": 0.02,
+    "n_neg": 100,
+    "false_alarms": 2,
+    "false_alarm_ci95": [
+     0.005501852234968185,
+     0.07001316294199365
+    ],
+    "accuracy": 0.9441624365482234
+   },
+   "real_threshold_sweep": {
+    "0.1": {
+     "detection_rate": 0.9381443298969072,
+     "false_alarm_rate": 0.03
+    },
+    "0.25": {
+     "detection_rate": 0.9072164948453608,
+     "false_alarm_rate": 0.02
+    },
+    "0.4": {
+     "detection_rate": 0.8556701030927835,
+     "false_alarm_rate": 0.01
+    },
+    "0.5": {
+     "detection_rate": 0.8350515463917526,
+     "false_alarm_rate": 0.01
+    },
+    "0.6": {
+     "detection_rate": 0.7938144329896907,
+     "false_alarm_rate": 0.01
+    },
+    "0.7": {
+     "detection_rate": 0.7525773195876289,
+     "false_alarm_rate": 0.0
+    }
+   },
+   "size_sweep": {
+    "12": 0.0,
+    "16": 0.0,
+    "20": 0.0,
+    "24": 0.025,
+    "28": 0.1,
+    "32": 0.35,
+    "40": 0.825,
+    "48": 0.95,
+    "56": 1.0,
+    "64": 1.0,
+    "80": 1.0,
+    "100": 1.0,
+    "128": 1.0
+   },
+   "condition": {
+    "angled@40": 0.025,
+    "angled@80": 1.0,
+    "rotated@40": 0.6,
+    "rotated@80": 1.0,
+    "dark@40": 0.775,
+    "dark@80": 1.0,
+    "overexposed@40": 0.725,
+    "overexposed@80": 1.0,
+    "motion_blur@40": 0.275,
+    "motion_blur@80": 0.95,
+    "occluded@40": 0.0,
+    "occluded@80": 0.725,
+    "frontal@40": 0.825,
+    "frontal@80": 1.0
+   },
+   "hard_negative": {
+    "no_entry_disc": 0.5333333333333333,
+    "red_disc": 0.6,
+    "red_triangle": 0.0
+   },
+   "hard_negative_conf0.5": {
+    "no_entry_disc": 0.13333333333333333,
+    "red_disc": 0.21666666666666667,
+    "red_triangle": 0.0
+   }
+  }
+ },
+ "timing_ms": {
+  "yolo26n": 299.77143700000397,
+  "yolo11n": 312.62544800006253,
+  "rules": 3.9980689998628804,
+  "rules_a150": 3.9886355002636265,
+  "yolo_ft1": 113.41925850001644,
+  "yolo_ft2": 51.96368499991877,
+  "yolo_ft3": 29.261965999921813,
+  "yolo_ft4": 16.956672000105755
+ },
+ "focal_px": 457.0073621574767
+}
