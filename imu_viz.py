@@ -30,7 +30,7 @@ from adafruit_bno08x import BNO_REPORT_MAGNETOMETER, BNO_REPORT_ROTATION_VECTOR
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from imu import open_imu, quat_to_euler, recover_bus
+from imu import close_imu, open_imu, quat_to_euler
 
 CAL_TEXT = {0: "unreliable", 1: "low", 2: "medium", 3: "high"}
 CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
@@ -81,15 +81,10 @@ class ImuReader(threading.Thread):
 
     def _connect(self):
         if self.bno is not None:
-            try:
-                self.bno.bus_device_obj.i2c.deinit()
-            except Exception:
-                pass
+            close_imu(self.bno)
             self.bno = None
         with self.lock:
             self.status = "connecting"
-        if recover_bus():
-            print("IMU: SDA was stuck low, clocked the I2C bus free")
         try:
             self.bno = open_imu(reports=self.REPORTS, interval_us=20_000)   # 50 Hz
         except Exception as e:
