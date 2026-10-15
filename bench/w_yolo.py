@@ -20,7 +20,7 @@ import cv2
 from common import TESTING, YOLO_DIR, Recorder, base_args, log, now
 
 sys.path.insert(0, YOLO_DIR)
-from detectors import YoloDetector  # noqa: E402
+sys.path.insert(0, TESTING)
 
 
 class QueuedCamera:
@@ -61,14 +61,23 @@ def main():
     ap.add_argument("--latest", action="store_true", help="background reader, always the newest frame")
     ap.add_argument("--max-hz", type=float, default=0, help="cap detections per second (0 = as fast as possible)")
     ap.add_argument("--conf", type=float, default=0.25)
+    ap.add_argument("--hailo", metavar="HEF", help="run on the AI HAT+ with this .hef instead of the CPU")
     a = ap.parse_args()
     rec = Recorder("yolo", a.out)
 
-    weights = a.weights if os.path.isabs(a.weights) else os.path.join(YOLO_DIR, a.weights)
-    yolo = YoloDetector(weights, conf=a.conf, imgsz=a.imgsz, threads=a.threads)
-    import torch
-    rec.info.update(weights=os.path.basename(weights), imgsz=yolo.imgsz, torch_threads=torch.get_num_threads(),
-                    latest=a.latest, max_hz=a.max_hz, omp_wait_policy=os.environ.get("OMP_WAIT_POLICY"))
+    if a.hailo:
+        # hailo_platform has to load before torch (the other order segfaults), so no detectors import here
+        from hailo_detector import HailoDetector
+        yolo = HailoDetector(a.hailo, conf=a.conf)
+        rec.info.update(backend="hailo", weights=os.path.basename(a.hailo), imgsz=yolo.imgsz)
+    else:
+        from detectors import YoloDetector
+        import torch
+        weights = a.weights if os.path.isabs(a.weights) else os.path.join(YOLO_DIR, a.weights)
+        yolo = YoloDetector(weights, conf=a.conf, imgsz=a.imgsz, threads=a.threads)
+        rec.info.update(backend="cpu", weights=os.path.basename(weights), imgsz=yolo.imgsz,
+                        torch_threads=torch.get_num_threads(), omp_wait_policy=os.environ.get("OMP_WAIT_POLICY"))
+    rec.info.update(latest=a.latest, max_hz=a.max_hz, conf=a.conf)
 
     if a.latest:
         sys.path.insert(0, TESTING)
@@ -112,6 +121,11 @@ def main():
         rec.counters["camera_frames_dropped"] = cam.dropped
         rec.dump()
         cam.release()
+        if a.hailo:                 # HailoRT segfaults if its objects are torn down implicitly
+            yolo.close()
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
 
 
 if __name__ == "__main__":

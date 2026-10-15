@@ -1,0 +1,73 @@
+# final.toml: hailo.toml with the sensor apps' real-time priorities moved below 50.
+# The kernel threads that deliver GPIO/IRQ events (e.g. irq/NN-bno085-int) run at SCHED_FIFO 50, and
+# setup_root_cores.sh puts sensor IRQs on core 1. With the apps at 60-80 they outranked the thread that
+# wakes the IMU (priority inversion: up to 14 ms INT delay in 20261015_164910_cores_iso).
+# Same order as before: IMU 49 > motor 48 > LiDAR 47 > GPS 46.
+
+[run]
+duration_s = 120          # measured window, after every worker reports ready
+ready_timeout_s = 120     # YOLO model load + camera warm-up can take a while
+label = "final"
+
+[workers.imu]
+cpus = "1"
+python = "~/testing/.venv/bin/python"
+script = "w_imu.py"
+args = ["--hz", "100"]
+rt_prio = 49
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+[workers.gps]
+cpus = "1"
+python = "~/testing/.venv/bin/python"
+script = "w_gps.py"
+args = ["--port", "/dev/ttyAMA0", "--baud", "230400", "--pps", "/dev/pps1"]
+rt_prio = 46
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+[workers.lidar]
+cpus = "1"
+python = "~/testing/.venv/bin/python"
+script = "w_lidar.py"
+# UART2 RX on GPIO5 (pin 29). The 2026-10-08 baseline ran on the PIO UART (/dev/ttyPIO0, pin 15).
+args = ["--port", "/dev/ttyAMA2", "--baud", "921600"]
+rt_prio = 47
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+[workers.yolo]
+cpus = "2,3"
+python = "~/stop-sign-eval/.venv/bin/python"
+script = "w_yolo.py"
+args = ["--device", "0", "--width", "640", "--height", "480", "--fps", "30", "--latest",
+        "--hailo", "/usr/share/hailo-models/yolov8s_h8l.hef", "--conf", "0.6"]
+
+[workers.cell]
+cpus = "0"
+python = "~/testing/cellular_test/.venv/bin/python"
+script = "w_cell.py"
+args = ["--interval", "1.0"]
+env = { RT_TIMERSLACK_NS = "1" }
+# receive_demo.py (tmux "cellular", started by cron) owns the Notecard; pause it during the run.
+pre = ["~/testing/cellular_test/cellular_logger.sh stop"]
+post = ["~/testing/cellular_test/cellular_logger.sh start"]
+
+[workers.motor]
+cpus = "1"
+python = "~/testing/.venv/bin/python"
+script = "w_motor.py"
+args = ["--port", "/dev/ttyUSB0", "--rate", "20", "--rpm", "0"]
+rt_prio = 48
+env = { RT_TIMERSLACK_NS = "1", RT_MLOCK = "1" }
+
+# Probes: measure the system, not an app. Started once the apps are ready.
+[workers.jitter]
+probe = true
+exec = "./jitter"
+args = ["--interval-us", "1000"]
+
+[workers.sysmon]
+cpus = "0"
+probe = true
+python = "/usr/bin/python3"
+script = "w_sysmon.py"
+args = ["--interval", "0.5"]
