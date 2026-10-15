@@ -1,0 +1,20 @@
+{
+ "t_go": 1021.385533967,
+ "t_end": 1036.385671574,
+ "duration_s": 15.000137607000056,
+ "workers": [
+  "imu"
+ ],
+ "proc": {
+  "imu": {
+   "cpu_pct": 6.066611012790534,
+   "invol_cs_per_s": 0.0,
+   "vol_cs_per_s": 1021.5906281318918,
+   "threads": 4,
+   "cpus_seen": [
+    1
+   ],
+   "cmd": "taskset -c 1 chrt -f 80 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_imu.py --out /home/sdteam22/testing/bench/results/20261015_163514_imu_check/imu.json --hz 100"
+  }
+ }
+}

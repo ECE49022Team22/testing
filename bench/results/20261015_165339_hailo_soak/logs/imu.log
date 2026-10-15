@@ -1,0 +1,4 @@
+$ taskset -c 1 chrt -f 80 /home/sdteam22/testing/.venv/bin/python -u /home/sdteam22/testing/bench/w_imu.py --out /home/sdteam22/testing/bench/results/20261015_165339_hailo_soak/imu.json --hz 100
+[imu] ready
+[imu] no data for 0.2 s: BNO085 reset
+[imu] wrote 449067 samples
