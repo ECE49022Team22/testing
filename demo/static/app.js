@@ -239,11 +239,13 @@ function renderCell() {
   $("cell-events").innerHTML = (d.events || []).slice().reverse().map((e) => `<div>${esc(e.time.slice(11, 19))} ${esc(e.msg)}</div>`).join("");
 }
 function renderMotor() {
-  const m = (S.system || {}).motor;
-  if (!m) return;
-  const holders = (m.holders || []).map((h) => `${esc(h.comm)} (${h.pid})`).join(", ");
-  $("motor-kv").innerHTML = `<span class="k">/dev/ttyUSB0</span><span>${m.present ? "present" : "not present"}</span>` +
-    `<span class="k">open by</span><span>${holders || "nobody"}</span>`;
+  const s = stats("motor"), d = data("motor"), r = s.cmd_rtt_ms || {}, dl = s.telem_delivery_ms || {};
+  const flags = (d.flags || []).length ? `<span class="badt">${esc(d.flags.join(", "))}</span>` : '<span class="okt">none</span>';
+  $("motor-kv").innerHTML = `<span class="k">target / measured</span><span>${fmt(d.tgt, 1)} / ${fmt(d.meas, 1)} RPM</span>` +
+    `<span class="k">duty · cap</span><span>${fmt(d.duty, 1)}% · ${fmt(d.cap, 0)}%</span>` +
+    `<span class="k">encoder count</span><span>${d.cnt ?? "–"}</span><span class="k">faults</span><span>${flags}</span>`;
+  $("motor-stats").innerHTML = stat("commands / s", fmt(s.cmd_hz, 0)) + stat("ack p50", fmt(r.p50, 1), "ms") + stat("ack p99", fmt(r.p99, 1), "ms") +
+    stat("no reply", s.timeouts ?? "–") + stat("telemetry / s", fmt(s.tel_hz, 0)) + stat("telemetry delivery p99", fmt(dl.p99, 1), "ms");
 }
 function renderDeadlines() {
   let live = 0, missed = 0;

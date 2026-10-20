@@ -10,7 +10,7 @@
 Then open http://<pi>:8090/ (on the Pi: http://localhost:8090/). Ctrl-C stops everything.
 
 Each sensor is its own process, pinned and prioritised by the profile, and restarted if it dies.
-The STM32 / motor link is deliberately not started: the demo never opens /dev/ttyUSB0.
+The motor worker holds the STM32 at 0 RPM unless --motor-rpm is given (it only ever sends a target RPM).
 """
 import argparse
 import json
@@ -36,6 +36,7 @@ WORKERS = {
     "gps": (SENSOR_PY, "d_gps.py", []),
     "vision": (VISION_PY, "d_vision.py", []),
     "cell": (SYS_PY, "d_cell.py", []),
+    "motor": (SENSOR_PY, "d_motor.py", []),
 }
 
 # Same layout and priorities as bench/final.toml. RT priorities stay below 50 so the kernel's IRQ
@@ -48,6 +49,7 @@ PROFILES = {
         "imu": {"cpus": "1", "rt_prio": 49, "env": RT_ENV},
         "lidar": {"cpus": "1", "rt_prio": 47, "env": RT_ENV},
         "gps": {"cpus": "1", "rt_prio": 46, "env": RT_ENV},
+        "motor": {"cpus": "1", "rt_prio": 48, "env": RT_ENV},
         "vision": {"cpus": "2,3", "args": ["--backend", "hailo", "--camera", "latest"]},
         "cell": {"cpus": "0"},
     },
@@ -58,6 +60,7 @@ PROFILES = {
         "imu": {"cpus": "1", "rt_prio": 49, "env": RT_ENV},
         "lidar": {"cpus": "1", "rt_prio": 47, "env": RT_ENV},
         "gps": {"cpus": "1", "rt_prio": 46, "env": RT_ENV},
+        "motor": {"cpus": "1", "rt_prio": 48, "env": RT_ENV},
         "vision": {"cpus": "2,3", "args": ["--backend", "ncnn", "--camera", "latest"], "env": {"OMP_WAIT_POLICY": "passive"}},
         "cell": {"cpus": "0"},
     },
@@ -65,7 +68,7 @@ PROFILES = {
         "about": "How it started: no pinning, no RT priority, PyTorch YOLO on the CPU, queued camera frames",
         "roles": {"0": "shared", "1": "shared (isolcpus is on, so unpinned work avoids it)", "2": "shared", "3": "shared"},
         "hub": {},
-        "imu": {}, "lidar": {}, "gps": {},
+        "imu": {}, "lidar": {}, "gps": {}, "motor": {},
         "vision": {"args": ["--backend", "torch", "--camera", "queued"]},
         "cell": {},
     },
@@ -113,6 +116,8 @@ def main():
     ap.add_argument("--profile", choices=sorted(PROFILES), default="optimized")
     ap.add_argument("--only", nargs="+", choices=sorted(WORKERS), help="start just these workers")
     ap.add_argument("--port", type=int, default=8090)
+    ap.add_argument("--motor-rpm", type=float, default=0.0,
+                    help="target RPM the motor worker holds (default 0: the motor stays still)")
     ap.add_argument("--browser", action="store_true",
                     help="open the dashboard in a Chromium window on core 0 at low priority (a browser on the "
                          "vision cores slows detection; on core 0 it only competes with the OS)")
@@ -140,14 +145,17 @@ def main():
     for name, (py, script, args) in WORKERS.items():
         if a.only and name not in a.only:
             continue
-        spec = prof[name]
+        spec = dict(prof[name])
+        if name == "motor":
+            spec["args"] = spec.get("args", []) + ["--rpm", f"{a.motor_rpm:g}"]
         procs.append(Proc(name, command(py, script, args, spec), dict(os.environ, **spec.get("env", {})), logdir))
 
     print(f"profile: {a.profile} - {prof['about']}")
     for p in procs:
         print(f"  {p.name:7s} {shlex.join(p.cmd)}")
     print(f"\ndashboard: http://localhost:{a.port}/   (from another machine: http://<pi-address>:{a.port}/)")
-    print("motor / STM32: not started (the demo never opens /dev/ttyUSB0)\nCtrl-C to stop.\n", flush=True)
+    print(f"motor / STM32: target {a.motor_rpm:g} RPM" + ("  <-- the motor WILL turn" if a.motor_rpm else " (motor stays still)"))
+    print("Ctrl-C to stop.\n", flush=True)
 
     browser = None
     if a.browser:

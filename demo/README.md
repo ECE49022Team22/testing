@@ -11,6 +11,7 @@ python3 run_demo.py                     # optimized (final system)
 python3 run_demo.py --browser           # same, and open the dashboard on the Pi's screen
 python3 run_demo.py --profile cpu       # best setup before the AI HAT+ (YOLO on the CPU)
 python3 run_demo.py --profile baseline  # how it started: no pinning, no RT, PyTorch, queued camera
+python3 run_demo.py --motor-rpm 5       # hold the motor at 5 RPM instead of 0 (it WILL turn)
 ```
 
 Open `http://localhost:8090/` on the Pi, or `http://<pi-address>:8090/` from a laptop on the same network.
@@ -29,7 +30,7 @@ Ctrl-C stops everything.
 | GPS | UM982, UART0 + PPS | fix, satellites, position, timing vs the 5 Hz grid, PPS |
 | Cores and processes | `/proc` | per-core load by role; each process's allowed cores, where it ran, scheduling class, CPU, preemptions |
 | Cellular | the receiver's log | Notehub session, signal, events |
-| Motor link | `/proc` only | whether `/dev/ttyUSB0` exists and who has it open |
+| Motor link | STM32 over FTDI (`/dev/ttyUSB0`) | target vs measured RPM, duty, cap, encoder, faults; command → acknowledgement latency; telemetry rate and delivery |
 
 Measured on 2026-10-19 (camera pointed at the room, no stop sign; LiDAR not delivering packets):
 
@@ -39,18 +40,22 @@ Measured on 2026-10-19 (camera pointed at the room, no stop sign; LiDAR not deli
 | cpu | 163 / 231 ms | 9.5 | 1 | 1.1 ms |
 | optimized | 51 / 60 ms | 30 | 0 | ~0.6 ms |
 
-## What it does not touch
+## What it touches, and what it doesn't
 
-- **STM32 / motor:** never started. The demo never opens `/dev/ttyUSB0` (the hub only looks it up in `/proc`).
+- **STM32 / motor:** `d_motor.py` sends only a target RPM, **0 unless you pass `--motor-rpm N`**, 20 times a second, and times
+  the "OK" reply. While it runs, telemetry is at 50 Hz (for the board's timestamps). On exit it sends `stop` and restores
+  10 Hz. It never changes the duty cap, gains or open-loop mode. Close `motor_live.py` / `motor_pid_uart.py` first: only one
+  program can hold the port.
 - **Notecard:** never opened. `receive_demo.py` (tmux `cellular`, started by cron) owns the I2C bus, and the demo
   only reads its log.
-- **No controls:** the hub has no endpoints that change anything. It only serves the page and the live state.
+- **No controls in the browser:** the hub has no endpoints that change anything. It only serves the page and the live state.
 
 ## How it works
 
 ```
  core 1 (isolated, RT)        cores 2-3                    core 0
  d_imu.py   FIFO 49 ─┐        d_vision.py ──── MJPEG :8091 ──────────────┐
+ d_motor.py FIFO 48 ─┤                                                   │
  d_lidar.py FIFO 47 ─┼─ UDP ─────────────┐                               │
  d_gps.py   FIFO 46 ─┘  (localhost 8765, │    d_cell.py ── UDP ─┐        │
                          never blocks)   └──────────────────────┴─ hub.py ── HTTP :8090 + SSE ── browser

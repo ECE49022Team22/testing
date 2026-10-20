@@ -6,8 +6,7 @@
   http://<pi>:8090/state     one JSON snapshot
 
 Runs on core 0 at normal priority, away from the sensors. Read-only: it has no endpoints that
-command anything, and it never opens the STM32's serial port (it only reports whether it exists
-and who has it open).
+command anything. (The motor worker, d_motor.py, is the only process that talks to the STM32.)
 """
 import argparse
 import json
@@ -30,6 +29,7 @@ DEADLINES = [
     ("lidar", "excess_ms", 10.0, "LiDAR delivery"),            # above the drift-corrected best case
     ("gps", "gga_jitter_ms", 20.0, "GPS fix timing"),          # vs the 5 Hz grid
     ("vision", "e2e_ms", 150.0, "Stop sign detection"),        # camera capture -> detection
+    ("motor", "cmd_rtt_ms", 20.0, "Motor command ack"),        # target RPM sent -> STM32 "OK"
 ]
 HISTORY_KEYS = [(w, k) for w, k, _, _ in DEADLINES] + [("vision", "fps")]
 HISTORY_LEN = 240                       # 2 minutes of 0.5 s windows
