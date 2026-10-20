@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Demo worker: STM32 motor controller over the FTDI USB-serial link (/dev/ttyUSB0, 115200).
+"""Demo worker: STM32 motor controller over its serial link (115200 baud).
+
+The port is --port: today the FTDI USB-serial adapter (/dev/ttyUSB0); a direct UART to the STM32
+later (e.g. /dev/ttyAMA3 with the matching dtoverlay). Nothing else here depends on which it is.
 
 Sends a target-RPM command at 20 Hz and times the firmware's "OK target" reply, and follows the
 telemetry stream (tgt/meas/duty/cap/cnt). While it runs, telemetry is at 50 Hz so each line carries
@@ -19,13 +22,14 @@ import serial
 
 from bus import Pub, Window, every, install_stop, now
 
-PORT, BAUD, CMD_HZ, TEL_HZ = "/dev/ttyUSB0", 115200, 20, 50
+BAUD, CMD_HZ, TEL_HZ = 115200, 20, 50
 TEL = re.compile(rb"tgt=(-?[\d.]+) meas=(-?[\d.]+) duty=(-?[\d.]+)% cap=(-?[\d.]+)% cnt=(-?\d+)(.*)")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rpm", type=float, default=0.0, help="target RPM to hold (default 0: motor stays still)")
+    ap.add_argument("--port", default="/dev/ttyUSB0", help="serial port to the STM32 (default %(default)s)")
     a = ap.parse_args()
     stop = install_stop()
     pub = Pub("motor")
@@ -47,9 +51,9 @@ def main():
     every(0.5, stats, stop)
     while not stop.is_set():
         try:
-            ser = serial.Serial(PORT, BAUD, timeout=0.2)
+            ser = serial.Serial(a.port, BAUD, timeout=0.2)
         except Exception as e:
-            pub.status("disconnected", f"{PORT}: {e}")
+            pub.status("disconnected", f"serial link to the STM32 ({a.port}): {e}")
             stop.wait(5)
             continue
         pending = {"t": None}
@@ -105,7 +109,7 @@ def main():
         th.start()
         try:
             ser.write(f"rate {TEL_HZ}\n".encode())
-            pub.status("ok", f"STM32 on {PORT}: target {a.rpm:g} RPM at {CMD_HZ} Hz, telemetry {TEL_HZ} Hz")
+            pub.status("ok", f"target {a.rpm:g} RPM, commanded {CMD_HZ}x per second; telemetry {TEL_HZ} Hz")
             nxt = now()
             while not stop.is_set():
                 acked.clear()

@@ -12,6 +12,7 @@ python3 run_demo.py --browser           # same, and open the dashboard on the Pi
 python3 run_demo.py --profile cpu       # best setup before the AI HAT+ (YOLO on the CPU)
 python3 run_demo.py --profile baseline  # how it started: no pinning, no RT, PyTorch, queued camera
 python3 run_demo.py --motor-rpm 5       # hold the motor at 5 RPM instead of 0 (it WILL turn)
+python3 run_demo.py --motor-port /dev/ttyAMA3   # STM32 on a direct UART instead of the USB-serial adapter
 ```
 
 Open `http://localhost:8090/` on the Pi, or `http://<pi-address>:8090/` from a laptop on the same network.
@@ -30,7 +31,7 @@ Ctrl-C stops everything.
 | GPS | UM982, UART0 + PPS | fix, satellites, position, timing vs the 5 Hz grid, PPS |
 | Cores and processes | `/proc` | per-core load by role; each process's allowed cores, where it ran, scheduling class, CPU, preemptions |
 | Cellular | the receiver's log | Notehub session, signal, events |
-| Motor link | STM32 over FTDI (`/dev/ttyUSB0`) | target vs measured RPM, duty, cap, encoder, faults; command → acknowledgement latency; telemetry rate and delivery |
+| Motor link | STM32 over its serial link (`--motor-port`, default `/dev/ttyUSB0`) | target vs measured RPM, duty, cap, encoder, faults; command → acknowledgement latency; telemetry rate and delivery |
 
 Measured on 2026-10-19 (camera pointed at the room, no stop sign; LiDAR not delivering packets):
 

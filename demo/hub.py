@@ -133,25 +133,6 @@ def proc_info(pid):
         return None
 
 
-def who_has_open(dev):
-    """PIDs (of this user) holding `dev` open. Looks at /proc only; never opens the device."""
-    try:
-        target = os.path.realpath(dev)
-    except OSError:
-        return []
-    pids = []
-    for pid in filter(str.isdigit, os.listdir("/proc")):
-        try:
-            for fd in os.listdir(f"/proc/{pid}/fd"):
-                if os.path.realpath(f"/proc/{pid}/fd/{fd}") == target:
-                    pids.append({"pid": int(pid), "comm": read(f"/proc/{pid}/comm"),
-                                 "cmd": (read(f"/proc/{pid}/cmdline") or "").replace("\0", " ").strip()[:120]})
-                    break
-        except OSError:
-            continue
-    return pids
-
-
 def system_loop(state, period=0.5):
     prev = cpu_times()
     prev_proc, i = {}, 0
@@ -184,7 +165,7 @@ def system_loop(state, period=0.5):
             prev_proc[pid] = {"cpu_s": info["cpu_s"], "invol": info["invol"], "t": t}
             procs.append({"name": name, "pid": pid, **info})
         sysd["procs"] = procs
-        if i % 4 == 0:                       # every 2 s: firmware queries and the motor port
+        if i % 4 == 0:                       # every 2 s: firmware queries
             out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True, text=True).stdout
             sysd["throttled"] = out.strip().split("=")[-1] if out else None
             adc = subprocess.run(["vcgencmd", "pmic_read_adc"], capture_output=True, text=True).stdout
@@ -193,9 +174,8 @@ def system_loop(state, period=0.5):
                     sysd["ext5v_v"] = round(float(line.split("=")[1].rstrip("V")), 2)
                 if "VDD_CORE_A" in line:
                     sysd["vdd_core_a"] = round(float(line.split("=")[1].rstrip("A")), 2)
-            sysd["motor"] = {"present": os.path.exists("/dev/ttyUSB0"), "holders": who_has_open("/dev/ttyUSB0")}
         else:
-            for k in ("throttled", "ext5v_v", "vdd_core_a", "motor"):
+            for k in ("throttled", "ext5v_v", "vdd_core_a"):
                 if k in old:
                     sysd[k] = old[k]
         with state.lock:

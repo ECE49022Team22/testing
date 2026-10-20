@@ -116,6 +116,8 @@ def main():
     ap.add_argument("--profile", choices=sorted(PROFILES), default="optimized")
     ap.add_argument("--only", nargs="+", choices=sorted(WORKERS), help="start just these workers")
     ap.add_argument("--port", type=int, default=8090)
+    ap.add_argument("--motor-port", default="/dev/ttyUSB0",
+                    help="serial port to the STM32: the USB-serial adapter today, a direct UART later (e.g. /dev/ttyAMA3)")
     ap.add_argument("--motor-rpm", type=float, default=0.0,
                     help="target RPM the motor worker holds (default 0: the motor stays still)")
     ap.add_argument("--browser", action="store_true",
@@ -147,7 +149,7 @@ def main():
             continue
         spec = dict(prof[name])
         if name == "motor":
-            spec["args"] = spec.get("args", []) + ["--rpm", f"{a.motor_rpm:g}"]
+            spec["args"] = spec.get("args", []) + ["--rpm", f"{a.motor_rpm:g}", "--port", a.motor_port]
         procs.append(Proc(name, command(py, script, args, spec), dict(os.environ, **spec.get("env", {})), logdir))
 
     print(f"profile: {a.profile} - {prof['about']}")
