@@ -38,7 +38,6 @@ class DemoLidar(stl.STL27L):
             self.st["packets"] += 1
             self.st["last_packet"] = now()
             off = (self.t_chunk * 1e3 - f[-2]) % TS_WRAP     # host ms minus device ms (mod the wrap)
-            self.st["offsets"].append((self.t_chunk, off))
             self.st["new"].append((self.t_chunk, off))
             yield f
 
@@ -46,9 +45,9 @@ class DemoLidar(stl.STL27L):
 def main():
     stop = install_stop()
     pub = Pub("lidar")
-    excess = Window()
-    st = {"bytes": 0, "packets": 0, "scans": 0, "last_packet": 0.0, "offsets": collections.deque(), "new": collections.deque(),
-          "t0": now(), "s0": 0, "b0": 0, "p0": 0, "lid": None}
+    excess = Window(0.5)                      # one window per published stats message
+    st = {"bytes": 0, "packets": 0, "scans": 0, "last_packet": 0.0, "new": collections.deque(),
+          "t0": now(), "s0": 0, "b0": 0, "p0": 0, "lid": None, "bad_ts": 0, "bucket_min": {}, "pending": collections.deque()}
 
     def stats():
         t = now()
@@ -56,18 +55,34 @@ def main():
         rates = dict(scan_hz=round((st["scans"] - st["s0"]) / dt, 2), packets_s=round((st["packets"] - st["p0"]) / dt),
                      bytes_s=round((st["bytes"] - st["b0"]) / dt))
         st["t0"], st["s0"], st["b0"], st["p0"] = t, st["scans"], st["bytes"], st["packets"]
-        # delivery latency above best case: offset minus the minimum offset of the last 5 s
-        offs = st["offsets"]
-        while offs and offs[0][0] < t - 5:
-            offs.popleft()
+        # Delivery latency above best case: each packet's offset (host arrival - LiDAR timestamp) minus
+        # the floor of the last 5 s. The floor is the lowest of the per-0.25 s minimum offsets that sit
+        # within 0.5 s of their median: a bad packet timestamp is not a late packet, and one of them as
+        # the floor made every packet look seconds late. (20 numbers per pass, not every packet.)
+        wrap = lambda d: (d + TS_WRAP / 2) % TS_WRAP - TS_WRAP / 2
+        mins = st["bucket_min"]
         new = st["new"]
-        if offs:
-            base = min(o for _, o in offs)
-            while new:
-                tt, o = new.popleft()
-                excess.add((o - base + TS_WRAP / 2) % TS_WRAP - TS_WRAP / 2, tt)
+        while new:
+            tt, o = new.popleft()
+            k = int(tt * 4)
+            mins[k] = o if k not in mins else (o if wrap(o - mins[k]) < 0 else mins[k])
+            st["pending"].append((tt, o))
+        for k in [k for k in mins if k < (t - 5) * 4]:
+            del mins[k]
+        if mins:
+            vals = sorted(mins.values())
+            med = vals[len(vals) // 2]
+            good = [wrap(o - med) for o in vals if abs(wrap(o - med)) <= 500]
+            base = med + (min(good) if good else 0)
+            pend = st["pending"]
+            while pend:
+                tt, o = pend.popleft()
+                if abs(wrap(o - med)) > 500:
+                    st["bad_ts"] += 1
+                    continue
+                excess.add(wrap(o - base), tt)
         lid = st["lid"]
-        pub.send("stats", **rates, excess_ms=excess.summary(), scans=st["scans"],
+        pub.send("stats", **rates, excess_ms=excess.summary(), scans=st["scans"], bad_timestamps=st["bad_ts"],
                  crc_errors=lid.crc_errors if lid else 0, rejected=lid.rejected if lid else 0,
                  speed_rps=round(lid.speed_dps / 360, 1) if lid else 0)
         if lid and t - st["last_packet"] > 2:

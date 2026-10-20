@@ -33,6 +33,7 @@ DEADLINES = [
 ]
 HISTORY_KEYS = [(w, k) for w, k, _, _ in DEADLINES] + [("vision", "fps")]
 HISTORY_LEN = 240                       # 2 minutes of 0.5 s windows
+WARMUP_S = 5.0                          # deadline accounting starts this long after a worker (re)starts
 
 
 class State:
@@ -50,10 +51,15 @@ class State:
         src, kind = msg.get("src"), msg.get("kind")
         with self.lock:
             w = self.workers.setdefault(src, {})
+            if w.get("pid") != msg.get("pid"):             # new or restarted worker process
+                w["since"] = time.time()
             w["pid"], w["seen"] = msg.get("pid"), time.time()
             w[kind] = msg
             if kind != "stats":
                 return
+            # Skip a worker's first seconds for deadline accounting: start-up (models loading, every
+            # worker launching at once, memory being locked) isn't steady-state latency.
+            warm = time.time() - w["since"] >= WARMUP_S
             for key in [k for ww, k in HISTORY_KEYS if ww == src]:
                 v = msg.get(key)
                 hist = self.history[f"{src}.{key}"]
@@ -63,7 +69,7 @@ class State:
                     hist.append([msg["t"], v, v])
                 del hist[:-HISTORY_LEN]
                 d = self.deadlines.get(f"{src}.{key}")
-                if d and isinstance(v, dict):
+                if d and warm and isinstance(v, dict):
                     d["windows"] += 1
                     d["over"] += v["max"] > d["budget"]
                     d["worst"] = v["max"] if d["worst"] is None else max(d["worst"], v["max"])

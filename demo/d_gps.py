@@ -59,7 +59,7 @@ def pps_thread(st, stop):
 def main():
     stop = install_stop()
     pub = Pub("gps")
-    jitter, pps_lat, gga_times = Window(), Window(10), Window()
+    jitter, pps_lat, gga_times = Window(0.5), Window(10), Window()   # gga_times: 5 s for a steady rate
     st = {"lines": 0, "bad": 0, "gga": 0, "pps": 0, "pps_seq": None, "pps_t": 0.0, "pps_used": True,
           "last_line": 0.0, "t0": now(), "l0": 0, "g0": 0}
     threading.Thread(target=pps_thread, args=(st, stop), daemon=True).start()

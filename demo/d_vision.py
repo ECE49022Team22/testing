@@ -153,7 +153,7 @@ def main():
 
     stream = Stream()
     serve(stream, a.port, a.stream_fps)
-    e2e, infer, age = Window(), Window(), Window()
+    e2e, infer, age = Window(0.5), Window(0.5), Window(0.5)
     st = {"frames": 0, "t0": now(), "f0": 0, "streak": 0, "confirmed": False, "best": None}
 
     def stats():

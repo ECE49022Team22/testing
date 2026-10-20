@@ -28,7 +28,7 @@
   <section class="tile" id="t-deadlines">
     <div class="head"><div><h2>Deadlines</h2><div class="iface">every stream checked against its budget, every 0.5 s</div></div></div>
     <table><thead><tr><th>stream</th><th class="num">budget</th><th class="num">p99 now</th><th class="num">worst</th><th class="num">on time</th></tr></thead><tbody id="deadlines"></tbody></table>
-    <div class="detail">Budgets: IMU interrupt serviced within 10 ms (the BNO085 stops signalling after ~10 ms); IMU sample every 10 ms, late if over 15 ms; LiDAR packet delivered within 10 ms of its best case; GPS fix within 20 ms of its 5 Hz grid; stop sign detected within 150 ms of capture. "On time" = share of 0.5 s windows whose worst sample stayed within budget, since the demo started.</div>
+    <div class="detail">Budgets: IMU interrupt serviced within 10 ms (the BNO085 stops signalling after ~10 ms); IMU sample every 10 ms, late if over 15 ms; LiDAR packet delivered within 10 ms of its best case; GPS fix within 20 ms of its 5 Hz grid; stop sign detected within 150 ms of capture. "On time" = share of 0.5 s windows whose worst sample stayed within budget, counted from 5 s after each process starts.</div>
   </section>
 
   <section class="tile" id="t-imu">

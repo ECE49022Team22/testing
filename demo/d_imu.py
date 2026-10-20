@@ -20,7 +20,7 @@ LATE_MS = 15.0
 def main():
     stop = install_stop()
     pub = Pub("imu")
-    lat, per = Window(), Window()
+    lat, per = Window(0.5), Window(0.5)       # one window per published stats message
     st = {"samples": 0, "late": 0, "resets": 0, "bad_headers": 0, "t0": now(), "n0": 0}
 
     def stats():
