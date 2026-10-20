@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sensor Pipeline Live</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Sensor pipeline, live</h1>
+  <div class="about" id="about">connecting…</div>
+  <div class="meta" id="meta"></div>
+  <button class="theme" id="theme" type="button" aria-label="Toggle light or dark theme">Theme</button>
+</header>
+<div class="banner" id="banner" role="status"><span class="chip"><span class="dot"></span>waiting</span><span class="sub">waiting for data from the hub</span></div>
+
+<main>
+  <section class="tile wide" id="t-vision">
+    <div class="head"><div><h2>Stop-sign detection</h2><div class="iface">USB camera 640×480 → detector</div></div><span class="chip" data-status="vision"></span></div>
+    <div class="video"><img id="video" alt="Live camera with detected stop signs outlined"><div class="none" id="video-none">no video yet</div></div>
+    <div class="confirm" id="confirm">no stop sign</div>
+    <div class="stats" id="vision-stats"></div>
+    <div class="spark" data-hist="vision.e2e_ms" data-title="Capture → detection, p99 per 0.5 s (ms)"></div>
+    <div class="detail" data-detail="vision"></div>
+  </section>
+
+  <section class="tile" id="t-deadlines">
+    <div class="head"><div><h2>Deadlines</h2><div class="iface">every stream checked against its budget, every 0.5 s</div></div></div>
+    <table><thead><tr><th>stream</th><th class="num">budget</th><th class="num">p99 now</th><th class="num">worst</th><th class="num">on time</th></tr></thead><tbody id="deadlines"></tbody></table>
+    <div class="detail">Budgets: IMU interrupt serviced within 10 ms (the BNO085 stops signalling after ~10 ms); IMU sample every 10 ms, late if over 15 ms; LiDAR packet delivered within 10 ms of its best case; GPS fix within 20 ms of its 5 Hz grid; stop sign detected within 150 ms of capture. "On time" = share of 0.5 s windows whose worst sample stayed within budget, since the demo started.</div>
+  </section>
+
+  <section class="tile" id="t-imu">
+    <div class="head"><div><h2>IMU</h2><div class="iface">BNO085 · SPI0 · INT on GPIO25 · 100 Hz</div></div><span class="chip" data-status="imu"></span></div>
+    <canvas id="horizon" height="150" role="img" aria-label="Artificial horizon from IMU roll and pitch"></canvas>
+    <div class="stats" id="imu-stats"></div>
+    <div class="spark" data-hist="imu.int_latency_ms" data-title="Interrupt → serviced, p99 per 0.5 s (ms)"></div>
+    <div class="detail" data-detail="imu"></div>
+  </section>
+
+  <section class="tile" id="t-lidar">
+    <div class="head"><div><h2>LiDAR</h2><div class="iface">STL-27L · UART2 pin 29 · 921600 baud · 10 Hz</div></div><span class="chip" data-status="lidar"></span></div>
+    <canvas id="lidar" height="240" role="img" aria-label="LiDAR scan seen from above, forward is up"></canvas>
+    <div class="stats" id="lidar-stats"></div>
+    <div class="spark" data-hist="lidar.excess_ms" data-title="Packet delivery above best case, p99 per 0.5 s (ms)"></div>
+    <div class="detail" data-detail="lidar"></div>
+  </section>
+
+  <section class="tile" id="t-gps">
+    <div class="head"><div><h2>GPS</h2><div class="iface">UM982 · UART0 pins 8/10 · PPS pin 12 · 5 Hz</div></div><span class="chip" data-status="gps"></span></div>
+    <div class="kv" id="gps-kv"></div>
+    <div class="stats" id="gps-stats"></div>
+    <div class="spark" data-hist="gps.gga_jitter_ms" data-title="Fix timing error vs 5 Hz grid, p99 per 0.5 s (ms)"></div>
+    <div class="detail" data-detail="gps"></div>
+  </section>
+
+  <section class="tile wide" id="t-system">
+    <div class="head"><div><h2>Cores and processes</h2><div class="iface" id="sys-iface"></div></div></div>
+    <div class="legend" id="legend"></div>
+    <div class="cores" id="cores"></div>
+    <table><thead><tr><th>process</th><th>allowed cores</th><th>ran on</th><th>scheduling</th><th class="num">CPU</th><th class="num">preempted /s</th></tr></thead><tbody id="procs"></tbody></table>
+    <div class="kv" id="sys-kv"></div>
+  </section>
+
+  <section class="tile" id="t-cell">
+    <div class="head"><div><h2>Cellular</h2><div class="iface">Notecard · I2C pins 3/5 · read-only from the receiver's log</div></div><span class="chip" data-status="cell"></span></div>
+    <div class="kv" id="cell-kv"></div>
+    <div class="events" id="cell-events"></div>
+    <div class="detail" data-detail="cell"></div>
+  </section>
+
+  <section class="tile" id="t-motor">
+    <div class="head"><div><h2>Motor link</h2><div class="iface">STM32 via FTDI · /dev/ttyUSB0</div></div><span class="chip"><span class="dot"></span>not monitored</span></div>
+    <div class="kv" id="motor-kv"></div>
+    <div class="detail">Left out of the demo on purpose: the STM32 is in use for motor calibration, and the demo never opens its port. Benchmarked separately: command → reply 2.6 / 5.7 ms p50 / p99, none lost (bench/ROUND3_AI_HAT.md).</div>
+  </section>
+</main>
+<footer>Each sensor runs as its own process; the hub (core 0) only reads their messages. Started with <code>testing/demo/run_demo.py</code>.</footer>
+<script src="app.js"></script>
+</body>
+</html>

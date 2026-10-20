@@ -3,7 +3,7 @@
 These two changes live in other team repos but were part of the benchmark rounds, so they're kept here
 too: each as the full file and as a patch against the commit it was made on. Both are also committed in
 their own repos on branch `latency-benchmark`: pwm-lab5 `424658a`, stop-sign-eval `08d9586` (code)
-and `a818e0c` (NCNN accuracy results).
+and `17edb17` (NCNN accuracy results).
 
 ## `pwm-lab5/` — STM32 motor firmware (round 1, suggestion 6)
 
