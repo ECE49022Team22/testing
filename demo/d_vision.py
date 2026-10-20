@@ -2,6 +2,7 @@
 """Demo worker: USB camera -> stop-sign detector -> annotated MJPEG stream + timing.
 
   --backend hailo   AI HAT+ (Hailo-8L yolov8s, conf 0.6)        <- optimized
+  --backend hailo26 AI HAT+ (Hailo-8L YOLO26n, conf 0.2), compiled with stop-sign-eval/hailo/make_kit.py
   --backend ncnn    CPU, NCNN 640 px, 2 threads
   --backend torch   CPU, PyTorch yolo26n (the original setup)
   --camera latest   background reader, newest frame (latest_camera.py)   <- optimized
@@ -24,6 +25,7 @@ sys.path.insert(0, TESTING)
 sys.path.insert(0, YOLO_DIR)
 
 HEF = "/usr/share/hailo-models/yolov8s_h8l.hef"
+YOLO26_HAILO = os.path.join(YOLO_DIR, "yolo26n_hailo_model")   # .hef + metadata.yaml from the x86 export
 CONFIRM_FRAMES = 3
 
 
@@ -31,6 +33,15 @@ def make_detector(backend):
     if backend == "hailo":
         from hailo_detector import HailoDetector          # must load before torch (see ROUND3_AI_HAT.md)
         return HailoDetector(HEF, conf=0.6), "AI HAT+ Hailo-8L, YOLOv8s"
+    if backend == "hailo26":
+        if not os.path.isdir(YOLO26_HAILO):
+            raise FileNotFoundError(f"{YOLO26_HAILO} not found: compile it on an x86_64 PC with "
+                                    "stop-sign-eval/hailo/make_kit.py (see the kit's README) and unpack it there")
+        import hailo_platform  # noqa: F401  load HailoRT before torch, as with the YOLOv8s HEF
+        from detectors import YoloDetector
+        # Ultralytics' Hailo backend decodes YOLO26's raw head on the host. conf 0.2: Ultralytics recommends
+        # ~0.05 below the PyTorch threshold (0.25) after INT8 quantization.
+        return YoloDetector(YOLO26_HAILO, conf=0.2), "AI HAT+ Hailo-8L, YOLO26n"
     from detectors import YoloDetector
     if backend == "ncnn":
         os.environ.setdefault("OMP_WAIT_POLICY", "passive")
@@ -124,7 +135,7 @@ def serve(stream, port, max_fps):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--backend", choices=("hailo", "ncnn", "torch"), default="hailo")
+    ap.add_argument("--backend", choices=("hailo", "hailo26", "ncnn", "torch"), default="hailo")
     ap.add_argument("--camera", choices=("latest", "queued"), default="latest")
     ap.add_argument("--port", type=int, default=8091)
     ap.add_argument("--stream-fps", type=float, default=15, help="max frame rate sent to each viewer")

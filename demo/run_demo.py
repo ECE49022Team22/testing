@@ -116,6 +116,9 @@ def main():
     ap.add_argument("--profile", choices=sorted(PROFILES), default="optimized")
     ap.add_argument("--only", nargs="+", choices=sorted(WORKERS), help="start just these workers")
     ap.add_argument("--port", type=int, default=8090)
+    ap.add_argument("--vision-model", choices=("yolov8s", "yolo26n"), default="yolov8s",
+                    help="stop-sign model on the AI HAT+ (optimized profile): yolov8s ships with hailo-all; "
+                         "yolo26n has to be compiled on an x86 PC first (stop-sign-eval/hailo/make_kit.py)")
     ap.add_argument("--motor-port", default="/dev/ttyUSB0",
                     help="serial port to the STM32: the USB-serial adapter today, a direct UART later (e.g. /dev/ttyAMA3)")
     ap.add_argument("--motor-rpm", type=float, default=0.0,
@@ -148,6 +151,13 @@ def main():
         if a.only and name not in a.only:
             continue
         spec = dict(prof[name])
+        if name == "vision" and a.vision_model == "yolo26n":
+            if "hailo" not in " ".join(spec.get("args", [])):
+                sys.exit("--vision-model yolo26n runs on the AI HAT+, so it needs the optimized profile")
+            if not os.path.isdir(os.path.join(HOME, "stop-sign-eval", "yolo26n_hailo_model")):
+                sys.exit("~/stop-sign-eval/yolo26n_hailo_model not found: compile YOLO26n on an x86_64 PC first "
+                         "(stop-sign-eval/hailo/make_kit.py builds the kit; its README has the steps)")
+            spec["args"] = [x if x != "hailo" else "hailo26" for x in spec["args"]]
         if name == "motor":
             spec["args"] = spec.get("args", []) + ["--rpm", f"{a.motor_rpm:g}", "--port", a.motor_port]
         procs.append(Proc(name, command(py, script, args, spec), dict(os.environ, **spec.get("env", {})), logdir))
