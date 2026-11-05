@@ -4,12 +4,16 @@
   http://<pi>:8090/          the dashboard (static/)
   http://<pi>:8090/events    Server-Sent Events: the whole state, 10x per second
   http://<pi>:8090/state     one JSON snapshot
+  POST http://<pi>:8090/motor   {"drive": [left, right]} | {"rpm": x} | {"cmd": "stop"|"reset"}
+                                (unless --no-motor-control)
 
-Runs on core 0 at normal priority, away from the sensors. Read-only: it has no endpoints that
-command anything. (The motor worker, d_motor.py, is the only process that talks to the STM32.)
+Runs on core 0 at normal priority, away from the sensors. /motor is its only command endpoint: it
+forwards the request to the motor worker (d_motor.py, the only process that talks to the STM32),
+which clamps the targets and lets them lapse to 0 unless the dashboard keeps renewing them.
 """
 import argparse
 import json
+import math
 import os
 import socket
 import subprocess
@@ -34,11 +38,13 @@ DEADLINES = [
 HISTORY_KEYS = [(w, k) for w, k, _, _ in DEADLINES] + [("vision", "fps")]
 HISTORY_LEN = 240                       # 2 minutes of 0.5 s windows
 WARMUP_S = 5.0                          # deadline accounting starts this long after a worker (re)starts
+MOTOR_CONTROL = ("127.0.0.1", 8766)     # d_motor.py's control socket
 
 
 class State:
-    def __init__(self, profile, roles):
+    def __init__(self, profile, roles, motor_control=True):
         self.lock = threading.Lock()
+        self.motor_control = motor_control
         self.started = time.time()
         self.profile, self.roles = profile, roles
         self.workers = {}
@@ -78,7 +84,8 @@ class State:
         with self.lock:
             return json.dumps({"now": time.time(), "started": self.started, "profile": self.profile,
                                "roles": self.roles, "workers": self.workers, "history": self.history,
-                               "deadlines": list(self.deadlines.values()), "system": self.system},
+                               "deadlines": list(self.deadlines.values()), "system": self.system,
+                               "control": {"motor": self.motor_control}},
                               separators=(",", ":"))
 
 
@@ -184,6 +191,7 @@ def system_loop(state, period=0.5):
 
 
 def make_handler(state):
+    ctl = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     types = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}
 
     class H(BaseHTTPRequestHandler):
@@ -221,6 +229,30 @@ def make_handler(state):
             with open(full, "rb") as f:
                 self._send(f.read(), types.get(os.path.splitext(full)[1], "application/octet-stream"))
 
+        def do_POST(self):
+            if self.path.split("?")[0] != "/motor":
+                return self._send(b"not found", "text/plain", 404)
+            if not state.motor_control:
+                return self._send(b"motor control is off (--no-motor-control)", "text/plain", 403)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                msg = json.loads(self.rfile.read(min(n, 512)) or b"{}")
+                num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+                drive = msg.get("drive")
+                if msg.get("cmd") in ("stop", "reset"):
+                    out = {"cmd": msg["cmd"]}
+                elif isinstance(drive, list) and len(drive) == 2 and all(map(num, drive)):
+                    out = {"drive": drive}
+                elif num(msg.get("rpm")):
+                    out = {"rpm": msg["rpm"]}
+                else:
+                    raise ValueError
+            except (ValueError, AttributeError):
+                return self._send(b'need {"drive": [left, right]}, {"rpm": x} or {"cmd": "stop"|"reset"}',
+                                  "text/plain", 400)
+            ctl.sendto(json.dumps(out).encode(), MOTOR_CONTROL)
+            self._send(b"ok", "text/plain")
+
     return H
 
 
@@ -230,8 +262,9 @@ def main():
     ap.add_argument("--bus-port", type=int, default=8765)
     ap.add_argument("--profile", default="optimized")
     ap.add_argument("--roles", default="{}", help="JSON: core -> role label, from run_demo.py")
+    ap.add_argument("--no-motor-control", action="store_true", help="dashboard can watch the motor but not drive it")
     a = ap.parse_args()
-    state = State(a.profile, json.loads(a.roles))
+    state = State(a.profile, json.loads(a.roles), motor_control=not a.no_motor_control)
     threading.Thread(target=udp_loop, args=(state, a.bus_port), daemon=True).start()
     threading.Thread(target=system_loop, args=(state,), daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(state))

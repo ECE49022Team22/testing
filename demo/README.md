@@ -11,7 +11,11 @@ python3 run_demo.py                     # optimized (final system)
 python3 run_demo.py --browser           # same, and open the dashboard on the Pi's screen
 python3 run_demo.py --profile cpu       # best setup before the AI HAT+ (YOLO on the CPU)
 python3 run_demo.py --profile baseline  # how it started: no pinning, no RT, PyTorch, queued camera
-python3 run_demo.py --motor-rpm 5       # hold the motor at 5 RPM instead of 0 (it WILL turn)
+python3 run_demo.py --motor-rpm 5       # hold both wheels at 5 RPM forward instead of 0 (they WILL turn)
+python3 run_demo.py --motor-max-rpm 60  # dashboard motor controls limited to ±60 RPM per wheel (default ±175)
+python3 run_demo.py --right-sign 1      # right motor NOT mounted mirrored (see "Wheels" below)
+python3 run_demo.py --left-motor 1      # swap which STM32 motor is the left wheel (default 2)
+python3 run_demo.py --no-motor-control  # dashboard shows the motor but cannot drive it
 python3 run_demo.py --motor-port /dev/ttyAMA3   # STM32 on a direct UART instead of the USB-serial adapter
 ```
 
@@ -31,7 +35,7 @@ Ctrl-C stops everything.
 | GPS | UM982, UART0 + PPS | fix, satellites, position, timing vs the 5 Hz grid, PPS |
 | Cores and processes | `/proc` | per-core load by role; each process's allowed cores, where it ran, scheduling class, CPU, preemptions |
 | Cellular | the receiver's log | Notehub session, signal, events |
-| Motor link | STM32 over its serial link (`--motor-port`, default `/dev/ttyUSB0`) | target vs measured RPM, duty, cap, encoder, faults; command → acknowledgement latency; telemetry rate and delivery |
+| Drive motors | STM32, two PG27s, over its serial link (`--motor-port`, default `/dev/ttyUSB0`) | per wheel: target vs measured RPM, duty, cap, encoder, faults, and a top view of the robot; command → acknowledgement latency; telemetry rate and delivery |
 
 Measured on 2026-10-19 (camera pointed at the room, no stop sign; LiDAR not delivering packets):
 
@@ -43,13 +47,29 @@ Measured on 2026-10-19 (camera pointed at the room, no stop sign; LiDAR not deli
 
 ## What it touches, and what it doesn't
 
-- **STM32 / motor:** `d_motor.py` sends only a target RPM, **0 unless you pass `--motor-rpm N`**, 20 times a second, and times
-  the "OK" reply. While it runs, telemetry is at 50 Hz (for the board's timestamps). On exit it sends `stop` and restores
+- **STM32 / motors:** `d_motor.py` sends only the two wheel targets (`d <rpm1> <rpm2>`), **0 unless you pass `--motor-rpm N`
+  or drive from the dashboard**, 20 times a second, each clamped to ±`--motor-max-rpm` (default 175, below the ~195 RPM full-duty
+  limit), and times the "OK" reply (p99 ~13 ms with two motors: an ack waits behind the ~13 ms two-motor telemetry line). While it runs, telemetry is at 50 Hz (for the board's timestamps). On exit it sends `stop` and restores
   10 Hz. It never changes the duty cap, gains or open-loop mode. Close `motor_live.py` / `motor_pid_uart.py` first: only one
   program can hold the port.
 - **Notecard:** never opened. `receive_demo.py` (tmux `cellular`, started by cron) owns the I2C bus, and the demo
   only reads its log.
-- **No controls in the browser:** the hub has no endpoints that change anything. It only serves the page and the live state.
+- **Motor controls in the browser** (Drive motors tile): a hold-to-drive pad (**Forward**, **Back**, **Turn left**, **Turn
+  right**, or the arrow keys / WASD) with drive and turn speed sliders, a slider per wheel with **Run both**, **Stop** and
+  **Clear stall faults**. Turning spins in place: turn left = left wheel back, right wheel forward. The page POSTs
+  `{"drive": [left, right]}` to the hub's `/motor`, which passes it to `d_motor.py` on localhost UDP 8766. A dashboard target
+  is a 1 s lease that the page renews every 300 ms: letting go of the pad, closing or hiding the tab, pressing Esc, or losing
+  the network brings the motors back to the command-line target (0) within a second (the firmware itself would hold its
+  last targets forever). Anyone who can open the page can drive the robot; `--no-motor-control` turns the controls off.
+  Nothing else in the hub changes anything.
+- **Wheels:** left = STM32 motor 2 (MDD20A channel 2), right = motor 1 (channel 1), checked driving on the floor
+  (2026-11-04: speeding up motor 1 turned the robot left); `--left-motor 1` swaps them. Targets are in the robot's frame
+  (+ = forward): motor 1's + direction rolls the robot backward and motor 2's forward, so the defaults are
+  `--left-motor 2 --left-sign 1 --right-sign -1`. If the motors are re-plugged, check again: if **Forward** spins the
+  robot, flip one sign; if it drives backward, flip both; if the turn buttons turn the wrong way, swap `--left-motor`.
+  Wheel speed is capped at ±175 RPM (`--motor-max-rpm`): with the wheels on, 100% duty gives ~195 RPM, so that leaves
+  the PID ~10% headroom. The chassis is skid-steer (two driven and two unpowered wheels), so turns are much wider than
+  the wheel speeds suggest: effective track ~1 m, not the 50 cm between the wheels, and spinning in place stalls.
 
 ## How it works
 

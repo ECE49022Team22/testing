@@ -10,7 +10,8 @@
 Then open http://<pi>:8090/ (on the Pi: http://localhost:8090/). Ctrl-C stops everything.
 
 Each sensor is its own process, pinned and prioritised by the profile, and restarted if it dies.
-The motor worker holds the STM32 at 0 RPM unless --motor-rpm is given (it only ever sends a target RPM).
+The motor worker holds the STM32 at 0 RPM unless --motor-rpm is given or the dashboard's motor controls
+set a target (it only ever sends a target RPM; --no-motor-control turns the controls off).
 """
 import argparse
 import json
@@ -123,6 +124,18 @@ def main():
                     help="serial port to the STM32: the USB-serial adapter today, a direct UART later (e.g. /dev/ttyAMA3)")
     ap.add_argument("--motor-rpm", type=float, default=0.0,
                     help="target RPM the motor worker holds (default 0: the motor stays still)")
+    ap.add_argument("--left-motor", type=int, choices=(1, 2), default=2,
+                    help="STM32 motor that drives the left wheel (default 2, checked driving on the floor 2026-11-04; "
+                         "the other one is the right wheel)")
+    ap.add_argument("--left-sign", type=int, choices=(1, -1), default=1,
+                    help="-1 if the left motor turning + drives the robot backwards (default 1)")
+    ap.add_argument("--right-sign", type=int, choices=(1, -1), default=-1,
+                    help="-1 if the right motor turning + drives the robot backwards (default -1)")
+    ap.add_argument("--motor-max-rpm", type=float, default=175.0,
+                    help="largest |target RPM| the dashboard (or --motor-rpm) may set (default 175: with the wheels on, "
+                         "100%% duty gives ~195 RPM, so this leaves the PID ~10%% headroom)")
+    ap.add_argument("--no-motor-control", action="store_true",
+                    help="dashboard shows the motor but can't drive it")
     ap.add_argument("--browser", action="store_true",
                     help="open the dashboard in a Chromium window on core 0 at low priority (a browser on the "
                          "vision cores slows detection; on core 0 it only competes with the OS)")
@@ -145,7 +158,8 @@ def main():
     os.makedirs(logdir, exist_ok=True)
 
     hub_cmd = command(SYS_PY, "hub.py", ["--port", str(a.port), "--profile", a.profile,
-                                         "--roles", json.dumps({"about": prof["about"], **prof["roles"]})], prof["hub"])
+                                         "--roles", json.dumps({"about": prof["about"], **prof["roles"]})]
+                      + (["--no-motor-control"] if a.no_motor_control else []), prof["hub"])
     procs = [Proc("hub", hub_cmd, dict(os.environ), logdir)]
     for name, (py, script, args) in WORKERS.items():
         if a.only and name not in a.only:
@@ -159,14 +173,18 @@ def main():
                          "(stop-sign-eval/hailo/make_kit.py builds the kit; its README has the steps)")
             spec["args"] = [x if x != "hailo" else "hailo26" for x in spec["args"]]
         if name == "motor":
-            spec["args"] = spec.get("args", []) + ["--rpm", f"{a.motor_rpm:g}", "--port", a.motor_port]
+            spec["args"] = spec.get("args", []) + ["--rpm", f"{a.motor_rpm:g}", "--port", a.motor_port,
+                                                  "--max-rpm", f"{a.motor_max_rpm:g}", "--left-motor", str(a.left_motor),
+                                                  "--left-sign", str(a.left_sign), "--right-sign", str(a.right_sign)]
         procs.append(Proc(name, command(py, script, args, spec), dict(os.environ, **spec.get("env", {})), logdir))
 
     print(f"profile: {a.profile} - {prof['about']}")
     for p in procs:
         print(f"  {p.name:7s} {shlex.join(p.cmd)}")
     print(f"\ndashboard: http://localhost:{a.port}/   (from another machine: http://<pi-address>:{a.port}/)")
-    print(f"motor / STM32: target {a.motor_rpm:g} RPM" + ("  <-- the motor WILL turn" if a.motor_rpm else " (motor stays still)"))
+    print(f"motors / STM32: left wheel = motor {a.left_motor} (sign {a.left_sign:+d}), right wheel = motor {3 - a.left_motor} "
+          f"(sign {a.right_sign:+d}); both wheels {a.motor_rpm:g} RPM" + ("  <-- the motors WILL turn" if a.motor_rpm else " (motors stay still)")
+          + ("; dashboard control off" if a.no_motor_control else f"; drivable from the dashboard up to ±{a.motor_max_rpm:g} RPM"))
     print("Ctrl-C to stop.\n", flush=True)
 
     browser = None

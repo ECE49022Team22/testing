@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demo worker: UM982 GNSS on UART0 (/dev/ttyAMA0 @ 230400), PPS on GPIO18 (/dev/pps1).
+"""Demo worker: UM982 GNSS on UART0 (/dev/ttyAMA0 @ 230400), PPS on GPIO18 (pps-gpio, found by name).
 
 Publishes every GGA (fix, satellites, HDOP, position) and, every 0.5 s, the sentence rates and the
 GGA timing error: how far each 5 Hz fix lands from its grid (the receiver emits on a fixed grid,
@@ -15,7 +15,7 @@ import serial
 
 from bus import Pub, Window, every, install_stop, now
 
-PORT, BAUD, PPS_DEV = "/dev/ttyAMA0", 230400, "/dev/pps1"
+PORT, BAUD = "/dev/ttyAMA0", 230400
 PPS_FETCH = 0xC00870A4
 PPS_FDATA = struct.Struct("<IIqiIqiIi4xqiI")
 FIX = {0: "no fix", 1: "GPS", 2: "DGPS", 4: "RTK fixed", 5: "RTK float", 6: "dead reckoning"}
@@ -39,10 +39,24 @@ def coord(v, hemi, deg_digits):
     return round(-d if hemi in ("S", "W") else d, 7)
 
 
+def pps_device():
+    """The pps-gpio source (named "pps@12" for GPIO18). Its /dev/ppsN number isn't fixed: the
+    Ethernet PHY's PTP clock (ptp0) also registers one, and which comes first varies by boot."""
+    for name in sorted(os.listdir("/sys/class/pps")):
+        try:
+            with open(f"/sys/class/pps/{name}/name") as f:
+                if f.read().startswith("pps@"):
+                    return f"/dev/{name}"
+        except OSError:
+            pass
+    return None
+
+
 def pps_thread(st, stop):
+    dev = pps_device()
     try:
-        fd = os.open(PPS_DEV, os.O_RDWR)
-    except OSError:
+        fd = os.open(dev, os.O_RDWR)
+    except (OSError, TypeError):
         return
     while not stop.is_set():
         buf = bytearray(PPS_FDATA.pack(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0))
@@ -67,7 +81,7 @@ def main():
     def stats():
         t = now()
         dt = max(1e-6, t - st["t0"])
-        pub.send("stats", lines_s=round((st["lines"] - st["l0"]) / dt, 1), gga_hz=round((gga_times.summary() or {"n": 0})["n"] / gga_times.span, 1),
+        pub.stats(lines_s=round((st["lines"] - st["l0"]) / dt, 1), gga_hz=round((gga_times.summary() or {"n": 0})["n"] / gga_times.span, 1),
                  gga_jitter_ms=jitter.summary(), pps_to_gga_ms=pps_lat.summary(), pps_pulses=st["pps"],
                  bad_lines=st["bad"])
         st["t0"], st["l0"], st["g0"] = t, st["lines"], st["gga"]

@@ -27,7 +27,7 @@ def main():
         t = now()
         rate = (st["samples"] - st["n0"]) / max(1e-6, t - st["t0"])
         st["t0"], st["n0"] = t, st["samples"]
-        pub.send("stats", rate_hz=round(rate, 1), int_latency_ms=lat.summary(), period_ms=per.summary(),
+        pub.stats(rate_hz=round(rate, 1), int_latency_ms=lat.summary(), period_ms=per.summary(),
                  samples=st["samples"], late=st["late"], resets=st["resets"], bad_headers=st["bad_headers"])
 
     every(0.5, stats, stop)

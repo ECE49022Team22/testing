@@ -238,14 +238,144 @@ function renderCell() {
     `<span class="k">last heartbeat</span><span>${age != null && age >= 0 ? age + " s ago" : "–"}</span>`;
   $("cell-events").innerHTML = (d.events || []).slice().reverse().map((e) => `<div>${esc(e.time.slice(11, 19))} ${esc(e.msg)}</div>`).join("");
 }
+function drawRobot(d, max) {
+  const [ctx, w, h] = fit($("robot"));
+  ctx.clearRect(0, 0, w, h);
+  const bw = Math.min(150, w * 0.42), bh = h - 40, cx = w / 2, top = 20;
+  ctx.fillStyle = css("--surface-2"); ctx.strokeStyle = css("--axis"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(cx - bw / 2, top, bw, bh, 10); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = css("--text-muted"); ctx.font = "12px system-ui, sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("▲ front", cx, top + 16);
+  // one speed bar per wheel, centred on 0: fill = measured, tick = target
+  const ww = 22, mid = top + bh / 2, half = bh / 2 - 8;
+  for (const [side, x] of [["left", cx - bw / 2 - ww - 8], ["right", cx + bw / 2 + 8]]) {
+    const wd = d[side] || {}, ok = wd.meas !== undefined;
+    ctx.fillStyle = css("--surface-2"); ctx.beginPath(); ctx.roundRect(x, top, ww, bh, 5); ctx.fill();
+    ctx.strokeStyle = css("--axis"); ctx.beginPath(); ctx.moveTo(x - 3, mid); ctx.lineTo(x + ww + 3, mid); ctx.stroke();
+    if (ok) {
+      const y = (v) => mid - Math.max(-1, Math.min(1, v / max)) * half;
+      ctx.fillStyle = (wd.flags || []).length ? css("--critical") : css("--series-1");
+      const ym = y(wd.meas);
+      ctx.fillRect(x + 3, Math.min(mid, ym), ww - 6, Math.abs(ym - mid));
+      ctx.strokeStyle = css("--text-primary"); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 4, y(wd.tgt)); ctx.lineTo(x + ww + 4, y(wd.tgt)); ctx.stroke(); ctx.lineWidth = 1;
+    }
+    ctx.fillStyle = css("--text-secondary"); ctx.textAlign = "center";
+    ctx.fillText(side, x + ww / 2, top + bh + 15);
+    ctx.fillStyle = css("--text-primary"); ctx.font = "600 13px system-ui, sans-serif";
+    ctx.fillText(ok ? fmt(wd.meas, 0) : "–", x + ww / 2, top - 6); ctx.font = "12px system-ui, sans-serif";
+  }
+  const l = (d.left || {}).meas, r = (d.right || {}).meas;
+  let what = "stopped";
+  if (l !== undefined && (Math.abs(l) > 2 || Math.abs(r) > 2)) {
+    what = Math.abs(l - r) < 0.2 * Math.max(Math.abs(l), Math.abs(r)) ? (l > 0 ? "driving forward" : "driving backward")
+      : Math.sign(l) !== Math.sign(r) && Math.abs(l + r) < 0.3 * Math.abs(l - r) ? (l > r ? "spinning right" : "spinning left")
+      : l > r ? "curving right" : "curving left";
+  }
+  ctx.fillStyle = css("--text-secondary"); ctx.textAlign = "center"; ctx.fillText(what, cx, mid + 4);
+}
 function renderMotor() {
   const s = stats("motor"), d = data("motor"), r = s.cmd_rtt_ms || {}, dl = s.telem_delivery_ms || {};
-  const flags = (d.flags || []).length ? `<span class="badt">${esc(d.flags.join(", "))}</span>` : '<span class="okt">none</span>';
-  $("motor-kv").innerHTML = `<span class="k">target / measured</span><span>${fmt(d.tgt, 1)} / ${fmt(d.meas, 1)} RPM</span>` +
-    `<span class="k">duty · cap</span><span>${fmt(d.duty, 1)}% · ${fmt(d.cap, 0)}%</span>` +
-    `<span class="k">encoder count</span><span>${d.cnt ?? "–"}</span><span class="k">faults</span><span>${flags}</span>`;
+  const wl = d.left || {}, wr = d.right || {}, wh = s.wheels || {};
+  const head = (side) => `${side}<br><span class="muted">motor ${(wh[side] || {}).motor ?? "–"}${(wh[side] || {}).sign === -1 ? ", reversed" : ""}</span>`;
+  $("wh-left").innerHTML = head("left"); $("wh-right").innerHTML = head("right");
+  const flags = (w) => (w.flags || []).length ? `<span class="badt">${esc(w.flags.join(", "))}</span>` : (w.flags ? '<span class="okt">none</span>' : "–");
+  const row = (k, f) => `<tr><td>${k}</td><td class="num">${f(wl)}</td><td class="num">${f(wr)}</td></tr>`;
+  $("wheel-rows").innerHTML = row("target", (w) => fmt(w.tgt, 1) + " RPM") + row("measured", (w) => fmt(w.meas, 1) + " RPM") +
+    row("duty · cap", (w) => `${fmt(w.duty, 1)}% · ${fmt(w.cap, 0)}%`) + row("encoder", (w) => w.cnt ?? "–") + row("faults", flags);
+  drawRobot(d, s.max_rpm || 190);
   $("motor-stats").innerHTML = stat("commands / s", fmt(s.cmd_hz, 0)) + stat("ack p50", fmt(r.p50, 1), "ms") + stat("ack p99", fmt(r.p99, 1), "ms") +
     stat("no reply", s.timeouts ?? "–") + stat("telemetry / s", fmt(s.tel_hz, 0)) + stat("telemetry delivery p99", fmt(dl.p99, 1), "ms");
+}
+// ---------------------------------------------------------------- motor control
+// The worker drops a dashboard target unless it's renewed within ~1 s, so while driving the page
+// re-sends it every 300 ms. Releasing the pad, Stop, Esc, hiding the tab or closing it all stop.
+// Targets are wheel RPM in the robot's frame: [left, right], + = forward.
+const motor = { mode: null, dir: null, timer: null, err: null };   // mode: null | "pad" | "wheels"
+function motorPost(body) {
+  return fetch("/motor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then((r) => { motor.err = r.ok ? null : "the hub refused the command (" + r.status + ")"; })
+    .catch(() => { motor.err = "can't reach the Pi: the motors stop within a second"; });
+}
+const num = (id) => Number($(id).value);
+function motorTargets() {
+  if (motor.mode === "wheels") return [num("m-left"), num("m-right")];
+  const v = num("m-speed"), t = num("m-turn");
+  return { fwd: [v, v], back: [-v, -v], left: [-t, t], right: [t, -t] }[motor.dir] || [0, 0];
+}
+function motorStart(mode, dir) {
+  motor.mode = mode; motor.dir = dir || null;
+  motorPost({ drive: motorTargets() });
+  clearInterval(motor.timer);
+  motor.timer = setInterval(() => motorPost({ drive: motorTargets() }), 300);
+  motorUi();
+}
+function motorStop() {
+  const was = motor.mode;
+  motor.mode = null; motor.dir = null;
+  clearInterval(motor.timer);
+  motor.timer = null;
+  motorPost({ cmd: "stop" });
+  motorUi();
+  return was;
+}
+const rpmText = (v) => (v > 0 ? "+" : "") + v + " RPM";
+function motorUi() {
+  for (const id of ["m-left", "m-right"]) $(id + "-v").textContent = rpmText(num(id));
+  for (const id of ["m-speed", "m-turn"]) $(id + "-v").textContent = num(id) + " RPM";
+  $("motor-ctl").classList.toggle("driving", !!motor.mode);
+  document.querySelectorAll("#m-pad button").forEach((b) => b.classList.toggle("on", motor.mode === "pad" && motor.dir === b.dataset.dir));
+  $("m-run").textContent = motor.mode === "wheels" ? "Running…" : "Run both";
+}
+(function motorControls() {
+  ["m-left", "m-right", "m-speed", "m-turn"].forEach((id) => $(id).addEventListener("input", motorUi));   // next renewal carries it
+  const pad = $("m-pad");
+  pad.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest("button[data-dir]");
+    if (!b || b.disabled) return;
+    e.preventDefault();
+    b.setPointerCapture(e.pointerId);
+    motorStart("pad", b.dataset.dir);
+  });
+  const release = () => { if (motor.mode === "pad") motorStop(); };
+  pad.addEventListener("pointerup", release);
+  pad.addEventListener("pointercancel", release);
+  pad.addEventListener("lostpointercapture", release);
+  const KEYS = { ArrowUp: "fwd", w: "fwd", ArrowDown: "back", s: "back", ArrowLeft: "left", a: "left", ArrowRight: "right", d: "right" };
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { motorStop(); return; }
+    const dir = KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+    if (!dir || $("motor-ctl").hidden || $("m-run").disabled || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && e.target.type !== "range") return;
+    e.preventDefault();
+    if (motor.mode !== "pad" || motor.dir !== dir) motorStart("pad", dir);
+  });
+  document.addEventListener("keyup", (e) => {
+    const dir = KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+    if (dir && motor.mode === "pad" && motor.dir === dir) motorStop();
+  });
+  window.addEventListener("blur", release);
+  $("m-run").addEventListener("click", () => motorStart("wheels"));
+  $("m-stop").addEventListener("click", motorStop);
+  $("m-reset").addEventListener("click", () => motorPost({ cmd: "reset" }));
+  document.addEventListener("visibilitychange", () => { if (document.hidden && motor.mode) motorStop(); });
+  window.addEventListener("pagehide", () => { if (motor.mode) navigator.sendBeacon("/motor", JSON.stringify({ cmd: "stop" })); });
+  motorUi();
+})();
+function renderMotorControl() {
+  const s = stats("motor"), on = !!(S.control && S.control.motor) && workerState("motor").key === "ok";
+  $("motor-ctl").hidden = !(S.control && S.control.motor);
+  if (s.max_rpm) {
+    for (const id of ["m-left", "m-right"]) if (Number($(id).max) !== s.max_rpm) { $(id).min = -s.max_rpm; $(id).max = s.max_rpm; }
+    for (const id of ["m-speed", "m-turn"]) if (Number($(id).max) !== s.max_rpm) $(id).max = s.max_rpm;
+    motorUi();
+  }
+  document.querySelectorAll("#m-pad button, #m-run").forEach((b) => { b.disabled = !on || (b.id === "m-run" && motor.mode === "wheels"); });
+  if (!on && motor.mode) motorStop();
+  const src = s.source === "dashboard" ? `the dashboard is setting left ${fmt(s.target_left, 0)} / right ${fmt(s.target_right, 0)} RPM`
+    : `holding the command-line target, ${fmt(s.target_left, 0)} RPM`;
+  $("m-note").innerHTML = motor.err ? `<span class="badt">${esc(motor.err)}</span>`
+    : !on ? "motor link not live: controls are disabled"
+    : esc(src) + " · limit ±" + fmt(s.max_rpm, 0) + " RPM · Esc stops, and so do closing or hiding this tab";
 }
 function renderDeadlines() {
   let live = 0, missed = 0;
@@ -274,7 +404,7 @@ function render() {
   $("meta").textContent = `profile: ${S.profile}`;
   document.querySelectorAll("[data-status]").forEach((el) => chip(el, workerState(el.dataset.status).key));
   document.querySelectorAll("[data-detail]").forEach((el) => { el.textContent = workerState(el.dataset.detail).detail; });
-  renderDeadlines(); renderVision(); renderImu(); renderLidar(); renderGps(); renderSystem(); renderCell(); renderMotor();
+  renderDeadlines(); renderVision(); renderImu(); renderLidar(); renderGps(); renderSystem(); renderCell(); renderMotor(); renderMotorControl();
   sparks.forEach(drawSpark);
 }
 

@@ -82,7 +82,7 @@ def main():
                     continue
                 excess.add(wrap(o - base), tt)
         lid = st["lid"]
-        pub.send("stats", **rates, excess_ms=excess.summary(), scans=st["scans"], bad_timestamps=st["bad_ts"],
+        pub.stats(**rates, excess_ms=excess.summary(), scans=st["scans"], bad_timestamps=st["bad_ts"],
                  crc_errors=lid.crc_errors if lid else 0, rejected=lid.rejected if lid else 0,
                  speed_rps=round(lid.speed_dps / 360, 1) if lid else 0)
         if lid and t - st["last_packet"] > 2:

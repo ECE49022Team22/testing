@@ -131,4 +131,28 @@ td.num, th.num { text-align: right; }
 .kv .k { color: var(--text-secondary); }
 .events { font-size: 12px; color: var(--text-secondary); max-height: 7.5em; overflow: auto; }
 .events div { border-top: 1px solid var(--grid); padding: 2px 0; }
+.mctl { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; background: var(--surface-2); }
+.mctl[hidden] { display: none; }
+.mrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mrow input[type=range] { flex: 1 1 160px; accent-color: var(--series-1); }
+.mrow output { min-width: 76px; text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.mctl button {
+  font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+}
+.mctl button:disabled { opacity: .5; cursor: default; }
+.mctl button.go { background: var(--series-1); border-color: var(--series-1); color: #fff; font-weight: 650; }
+.mctl button.stopb { background: var(--critical); border-color: var(--critical); color: #fff; font-weight: 700; flex: 1 1 auto; }
+.mctl.driving { outline: 2px solid var(--series-1); }
+.mgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; align-items: start; }
+@media (max-width: 760px) { .mgrid { grid-template-columns: 1fr; } }
+.mleft { display: flex; flex-direction: column; gap: 8px; }
+#robot { width: 100%; display: block; }
+.msec { font-size: 12px; font-weight: 650; color: var(--text-secondary); }
+.mrow label { font-size: 12px; color: var(--text-secondary); min-width: 70px; }
+.mctl .mrow input[type=range] { flex: 1 1 60px; min-width: 60px; }
+.mctl .mrow output { min-width: 64px; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pad button { padding: 10px 6px; font-weight: 650; touch-action: none; user-select: none; -webkit-user-select: none; }
+.pad button.on { background: var(--series-1); border-color: var(--series-1); color: #fff; }
 footer { color: var(--text-muted); font-size: 12px; padding: 0 20px 20px; }

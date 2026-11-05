@@ -171,7 +171,7 @@ def main():
         t = now()
         fps = (st["frames"] - st["f0"]) / max(1e-6, t - st["t0"])
         st["t0"], st["f0"] = t, st["frames"]
-        pub.send("stats", fps=round(fps, 1), e2e_ms=e2e.summary(), infer_ms=infer.summary(), age_ms=age.summary(),
+        pub.stats(fps=round(fps, 1), e2e_ms=e2e.summary(), infer_ms=infer.summary(), age_ms=age.summary(),
                  confirmed=st["confirmed"], best=st["best"], viewers=stream.clients, backend=a.backend,
                  camera=a.camera, label=label, stream_port=a.port)
 

@@ -32,6 +32,7 @@ class Pub:
         self.name = name
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setblocking(False)
+        self.last_status, self.status_sent = None, 0.0
 
     def send(self, kind, **data):
         msg = {"src": self.name, "kind": kind, "pid": os.getpid(), "t": time.time(), **data}
@@ -42,7 +43,18 @@ class Pub:
 
     def status(self, state, detail=""):
         """state: 'ok' | 'starting' | 'nodata' | 'disconnected' | 'error'"""
-        self.send("status", state=state, detail=detail)
+        self.last_status = {"state": state, "detail": detail}
+        self.status_sent = time.monotonic()
+        self.send("status", **self.last_status)
+
+    def stats(self, **data):
+        """Publish stats, and repeat the current status every 2 s: a status sent before the hub was
+        listening (workers and hub start together) or lost across a hub restart would otherwise
+        leave the worker shown as 'starting' for good."""
+        self.send("stats", **data)
+        if self.last_status and time.monotonic() - self.status_sent >= 2:
+            self.status_sent = time.monotonic()
+            self.send("status", **self.last_status)
 
 
 class Window:

@@ -70,15 +70,38 @@
     <div class="detail" data-detail="cell"></div>
   </section>
 
-  <section class="tile" id="t-motor">
-    <div class="head"><div><h2>Motor link</h2><div class="iface">STM32 · serial link · 115200 baud</div></div><span class="chip" data-status="motor"></span></div>
-    <div class="kv" id="motor-kv"></div>
+  <section class="tile wide" id="t-motor">
+    <div class="head"><div><h2>Drive motors</h2><div class="iface">STM32 · 2 × PG27 closed-loop · serial link · 115200 baud</div></div><span class="chip" data-status="motor"></span></div>
+    <div class="mgrid">
+      <div class="mleft">
+        <canvas id="robot" height="210" aria-label="Robot seen from above: each wheel's target and measured speed"></canvas>
+        <table class="wheels"><thead><tr><th></th><th class="num" id="wh-left">left</th><th class="num" id="wh-right">right</th></tr></thead><tbody id="wheel-rows"></tbody></table>
+      </div>
+      <div class="mctl" id="motor-ctl" hidden>
+        <div class="msec">Drive the robot <span class="muted">· hold a button, or the arrow keys / WASD</span></div>
+        <div class="pad" id="m-pad">
+          <span></span><button type="button" data-dir="fwd">▲ Forward</button><span></span>
+          <button type="button" data-dir="left">↺ Turn left</button><button type="button" data-dir="back">▼ Back</button><button type="button" data-dir="right">Turn right ↻</button>
+        </div>
+        <div class="mrow"><label for="m-speed">drive speed</label><input type="range" id="m-speed" min="10" max="190" step="5" value="60"><output id="m-speed-v" for="m-speed">60 RPM</output></div>
+        <div class="mrow"><label for="m-turn">turn speed</label><input type="range" id="m-turn" min="10" max="190" step="5" value="40"><output id="m-turn-v" for="m-turn">40 RPM</output></div>
+        <div class="msec">Each wheel <span class="muted">· + is forward</span></div>
+        <div class="mrow"><label for="m-left">left wheel</label><input type="range" id="m-left" min="-190" max="190" step="5" value="0"><output id="m-left-v" for="m-left">0 RPM</output></div>
+        <div class="mrow"><label for="m-right">right wheel</label><input type="range" id="m-right" min="-190" max="190" step="5" value="0"><output id="m-right-v" for="m-right">0 RPM</output></div>
+        <div class="mrow">
+          <button type="button" class="go" id="m-run">Run both</button>
+          <button type="button" class="stopb" id="m-stop">Stop</button>
+          <button type="button" id="m-reset">Clear stall faults</button>
+        </div>
+        <div class="detail" id="m-note"></div>
+      </div>
+    </div>
     <div class="stats" id="motor-stats"></div>
     <div class="spark" data-hist="motor.cmd_rtt_ms" data-title="Command → STM32 acknowledgement, p99 per 0.5 s (ms)"></div>
     <div class="detail" data-detail="motor"></div>
   </section>
 </main>
-<footer>Each sensor runs as its own process; the hub (core 0) only reads their messages. Started with <code>testing/demo/run_demo.py</code>.</footer>
+<footer>Each sensor runs as its own process; the hub (core 0) reads their messages, and its only command is the wheel targets it passes to the motor worker. Started with <code>testing/demo/run_demo.py</code>.</footer>
 <script src="app.js"></script>
 </body>
 </html>
