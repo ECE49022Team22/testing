@@ -2,7 +2,15 @@
 
 Open issue from the session on the evening of 2026-10-05 EDT (2026-10-06 UTC). See CELLULAR.md for the full cellular setup.
 
-## Status when we stopped
+## Update 2026-10-27: likely cause is GPS
+
+Forum reply (RobLauer, Blues, Oct 9): on the Notecard, GPS and cellular can't run at the same time, so a GPS search holds the modem
+and leaves the hub at `{connected-closed}`. Confirmed on our card: `card.location` showed
+`GPS search (58 sec, 0/0 sats) {gps-active}` with `card.location.mode` periodic every 60 s (indoors it never gets a fix, so it keeps searching).
+Ran `{"req":"card.location.mode","mode":"off"}` + `hub.sync`: `(session open)` about 60 s later. Nothing in our code sets location mode.
+If we need GPS later, use a long `seconds` interval or `card.location.mode` with `"threshold"`, not 60 s periodic.
+
+## Status when we stopped (2026-10-06)
 
 - Receiver running under `cellular_test/cellular_logger.sh` (tmux session `cellular`), log in `cellular_test/logs/cellular_log.txt`.
   `./watch_log.sh --open` opens the live log window on the Pi desktop.

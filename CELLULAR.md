@@ -124,7 +124,7 @@ Check with `hub.get`. Current values:
 - The card stores `hub.set` settings. `receive_demo.py` re-applies it on every start (`NotecardLink.enable_immediate_sync()`), so
   a replacement or factory-reset card is covered. Re-applying it does **not** cause a reconnect (checked).
 - `inbound`, `outbound` and `duration` aren't set. `duration` (at least 15 min) would make continuous mode end and restart the session on a schedule.
-- **GPS:** `card.location.mode` is `periodic` every 60 s (probably the factory default). That costs power; turn it off or slow it down if we don't need it.
+- **GPS:** `card.location.mode` is **`off`** (set 2026-10-27). It was `periodic` every 60 s, and each GPS search holds the modem, which kept the continuous session closed (see NOTECARD_SESSION_ISSUE.md). Keep it off unless we need it.
   Notehub adds cell-tower and triangulated location to every event anyway (`tower_lat`/`tri_lat` fields).
 - **Clock:** `card.time` gives network time (and location/timezone). `receive_demo.py` uses it for staleness checks, because a robot
   on cellular only may have no NTP. The card clock matched the Pi's NTP clock within about 1.5 s.
