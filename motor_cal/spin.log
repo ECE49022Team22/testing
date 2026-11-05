@@ -1,0 +1,5 @@
+gyro bias -0.01 deg/s (removed)
+nearest obstacle 1788 mm at 131 deg; stop distance 500 mm
+spin left at 15 RPM per wheel: wheels L -2.0 R +0.1 RPM, gyro -1.2 deg/s, total turn -5 deg (stopped: motor stall fault)
+effective track width -105.5 cm  (gyro sign: CCW/left turn is -)
+LiDAR scene shifted -5 deg (match error 131 mm) for a -5 deg gyro turn: LiDAR angles increase counter-clockwise

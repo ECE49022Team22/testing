@@ -1,0 +1,9 @@
+forward 60     wheels L  +60.7 R  +63.8 RPM | m1 over  1.2% err  +0.0 jit 0.8 duty -31.4% | m2 over  6.3% err  +0.1 jit 2.8 duty +33.4% 
+forward 120    wheels L +119.7 R +121.3 RPM | m1 over  4.8% err  -0.4 jit 1.2 duty -60.1% | m2 over 12.8% err  +1.9 jit 3.7 duty +61.1% 
+forward 160    wheels L +159.6 R +159.6 RPM | m1 over  3.0% err  +0.1 jit 0.9 duty -80.2% | m2 over  3.0% err  -0.0 jit 0.7 duty +80.5% 
+stop           wheels L   -0.0 R   +0.0 RPM | m1 over  0.0% err  +0.0 jit 0.0 duty  +0.0% | m2 over  0.0% err  +0.0 jit 0.0 duty  +0.0% 
+back 60        wheels L  -59.1 R  -60.7 RPM | m1 over  1.2% err  +0.0 jit 0.8 duty +31.1% | m2 over  1.2% err  -0.2 jit 0.7 duty -31.7% 
+spin left 40   wheels L  -39.9 R  +39.9 RPM | m1 over  8.5% err  -0.3 jit 0.9 duty +22.0% | m2 over  1.5% err  +0.1 jit 0.7 duty +23.0% 
+spin right 40  wheels L  +41.5 R  -39.9 RPM | m1 over  1.9% err  -0.0 jit 0.8 duty -21.6% | m2 over  1.9% err  -0.1 jit 0.5 duty -22.7% 
+stop           wheels L   -0.0 R   +0.0 RPM | m1 over  0.0% err  +0.0 jit 0.0 duty  +0.0% | m2 over  0.0% err  +0.0 jit 0.0 duty  +0.0% 
+done

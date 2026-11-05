@@ -1,0 +1,6 @@
+gyro bias -0.01 deg/s (removed)
+nearest obstacle 1834 mm at 156 deg; stop distance 500 mm
+circle: diameter 2.0 m, right, 0.25 m/s, track 50.0 cm -> wheels L 29.4 R 17.6 RPM, -14.3 deg/s, ~25 s per lap
+turned -22 deg; wheels travelled L 1.72 m, R 1.31 m, centre 1.51 m (a 2.0 m circle is 6.28 m)
+radius from wheels and gyro: 3.85 m (target 1.00 m)
+steady part: wheels L 0.276 R 0.211 m/s, turn -3.6 deg/s -> effective track 103 cm (geometric 50 cm)

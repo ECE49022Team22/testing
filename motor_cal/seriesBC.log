@@ -1,0 +1,21 @@
+===== B: feedforward
+gyro bias -0.00 deg/s (removed)
+nearest obstacle 1171 mm at 157 deg; stop distance 500 mm
+  m1 kf 0.46 -> OK kp=0.1040 ki=2.0550 kd=0.0000 kf=0.4600 ks=0.00
+  m2 kf 0.46 -> OK kp=0.0890 ki=2.0620 kd=0.0000 kf=0.4600 ks=0.00
+  m1 ks 4 -> OK kp=0.1040 ki=2.0550 kd=0.0000 kf=0.4600 ks=4.00
+  m2 ks 4 -> OK kp=0.0890 ki=2.0620 kd=0.0000 kf=0.4600 ks=4.00
+q=+0.50 fwd  wheels L  +24.9 R  +19.6 RPM  duty L   +49% R    -9%  yaw   -3.3 deg/s (turned   -13)  eff track    97 cm  radius  -4.06 m
+q=+0.50 back wheels L  -24.2 R  -19.7 RPM  duty L   -48% R    +8%  yaw   +1.9 deg/s (turned   +10)  eff track   145 cm  radius  -7.02 m
+q=+0.25 fwd  wheels L  +23.1 R  +11.9 RPM  duty L   +62% R   -19%  yaw   -6.6 deg/s (turned   -29)  eff track   103 cm  radius  -1.61 m
+q=+0.25 back wheels L  -24.0 R  -11.6 RPM  duty L   -59% R   +18%  yaw   +7.6 deg/s (turned   +27)  eff track    99 cm  radius  -1.42 m
+q=+0.00 fwd  wheels L  +22.8 R   +4.9 RPM  duty L   +69% R   -26%  yaw  -11.7 deg/s (turned   -34)  eff track    93 cm  radius  -0.72 m
+q=+0.00 back wheels L  -23.5 R   -4.6 RPM  duty L   -65% R   +24%  yaw  +10.6 deg/s (turned   +31)  eff track   109 cm  radius  -0.81 m
+q=-0.25 fwd  wheels L  +18.5 R   +0.9 RPM  duty L   +87% R   -46%  yaw   -9.4 deg/s (turned   -29)  eff track   114 cm  radius  -0.63 m
+q=-0.25 back wheels L  -20.9 R   -0.8 RPM  duty L   -80% R   +41%  yaw   +8.0 deg/s (turned   +20)  eff track   153 cm  radius  -0.83 m  STOPPED: obstacle 495 mm at 143 deg
+log: /home/sdteam22/motor_cal/turnmap_B_ff_113829.pkl (709 ticks, 439 scans)
+===== C: feedforward + Kp 0.3
+gyro bias +0.00 deg/s (removed)
+nearest obstacle 468 mm at 147 deg; stop distance 500 mm
+something is already inside the stop distance: clear the area
+ALL DONE

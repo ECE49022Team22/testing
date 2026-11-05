@@ -1,0 +1,77 @@
+NTRIP 108.59.49.226:9000/MSM4_NEAR -> /dev/ttyAMA0 @ 230400
+     2s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 508 B/s | RTCM 1074x1 1084x1 1094x1 1124x1
+     4s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 941 B/s | RTCM 1074x3 1084x3 1094x3 1124x3
+     6s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 954 B/s | RTCM 1006x1 1074x5 1084x5 1094x5 1124x5
+     8s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 988 B/s | RTCM 1006x1 1008x1 1033x1 1074x7 1084x7 1094x7 1124x7 1230x1
+    10s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 954 B/s | RTCM 1006x2 1008x1 1033x1 1074x9 1084x9 1094x9 1124x9 1230x1
+    12s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 988 B/s | RTCM 1006x2 1008x2 1033x2 1074x11 1084x11 1094x11 1124x11 1230x2
+    14s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 941 B/s | RTCM 1006x2 1008x2 1033x2 1074x13 1084x13 1094x13 1124x13 1230x2
+    16s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 954 B/s | RTCM 1006x3 1008x2 1033x2 1074x15 1084x15 1094x15 1124x15 1230x2
+    18s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 988 B/s | RTCM 1006x3 1008x3 1033x3 1074x17 1084x17 1094x17 1124x17 1230x3
+    20s  GPS        sats 13 HDOP  1.11 age    - base    - | streaming, 954 B/s | RTCM 1006x4 1008x3 1033x3 1074x19 1084x19 1094x19 1124x19 1230x3
+    22s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 988 B/s | RTCM 1006x4 1008x4 1033x4 1074x21 1084x21 1094x21 1124x21 1230x4
+    24s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 948 B/s | RTCM 1006x4 1008x4 1013x1 1033x4 1074x23 1084x23 1094x23 1124x23 1230x4
+    26s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 954 B/s | RTCM 1006x5 1008x4 1013x1 1033x4 1074x25 1084x25 1094x25 1124x25 1230x4
+    28s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 992 B/s | RTCM 1006x5 1008x5 1013x1 1033x5 1074x27 1084x27 1094x27 1124x27 1230x5
+    30s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 962 B/s | RTCM 1006x6 1008x5 1013x1 1033x5 1074x29 1084x29 1094x29 1124x29 1230x5
+    32s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 996 B/s | RTCM 1006x6 1008x6 1013x1 1033x6 1074x31 1084x31 1094x31 1124x31 1230x6
+    34s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 938 B/s | RTCM 1006x6 1008x6 1013x1 1033x6 1074x33 1084x33 1094x33 1124x33 1230x6
+    36s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 955 B/s | RTCM 1006x7 1008x6 1013x1 1033x6 1074x35 1084x35 1094x35 1124x35 1230x6
+    38s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 1002 B/s | RTCM 1006x7 1008x7 1013x1 1033x7 1074x37 1084x37 1094x37 1124x37 1230x7
+    40s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 968 B/s | RTCM 1006x8 1008x7 1013x1 1033x7 1074x39 1084x39 1094x39 1124x39 1230x7
+    42s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 1002 B/s | RTCM 1006x8 1008x8 1013x1 1033x8 1074x41 1084x41 1094x41 1124x41 1230x8
+    44s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 955 B/s | RTCM 1006x8 1008x8 1013x1 1033x8 1074x43 1084x43 1094x43 1124x43 1230x8
+    46s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 968 B/s | RTCM 1006x9 1008x8 1013x1 1033x8 1074x45 1084x45 1094x45 1124x45 1230x8
+    48s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 988 B/s | RTCM 1006x9 1008x9 1013x1 1033x9 1074x47 1084x47 1094x47 1124x47 1230x9
+    50s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 968 B/s | RTCM 1006x10 1008x9 1013x1 1033x9 1074x49 1084x49 1094x49 1124x49 1230x9
+    52s  GPS        sats 14 HDOP  1.09 age    - base    - | streaming, 1002 B/s | RTCM 1006x10 1008x10 1013x1 1033x10 1074x51 1084x51 1094x51 1124x51 1230x10
+    54s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 955 B/s | RTCM 1006x10 1008x10 1013x1 1033x10 1074x53 1084x53 1094x53 1124x53 1230x10
+    56s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 968 B/s | RTCM 1006x11 1008x10 1013x1 1033x10 1074x55 1084x55 1094x55 1124x55 1230x10
+    58s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 988 B/s | RTCM 1006x11 1008x11 1013x1 1033x11 1074x57 1084x57 1094x57 1124x57 1230x11
+    60s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 955 B/s | RTCM 1006x12 1008x11 1013x1 1033x11 1074x59 1084x59 1094x59 1124x59 1230x11
+    62s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 1002 B/s | RTCM 1006x12 1008x12 1013x1 1033x12 1074x61 1084x61 1094x61 1124x61 1230x12
+    64s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 942 B/s | RTCM 1006x12 1008x12 1013x1 1033x12 1074x63 1084x63 1094x63 1124x63 1230x12
+    66s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 955 B/s | RTCM 1006x13 1008x12 1013x1 1033x12 1074x65 1084x65 1094x65 1124x65 1230x12
+    68s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 988 B/s | RTCM 1006x13 1008x13 1013x1 1033x13 1074x67 1084x67 1094x67 1124x67 1230x13
+    70s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 968 B/s | RTCM 1006x14 1008x13 1013x1 1033x13 1074x69 1084x69 1094x69 1124x69 1230x13
+    72s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 1002 B/s | RTCM 1006x14 1008x14 1013x1 1033x14 1074x71 1084x71 1094x71 1124x71 1230x14
+    74s  GPS        sats 15 HDOP  1.05 age    - base    - | streaming, 955 B/s | RTCM 1006x14 1008x14 1013x1 1033x14 1074x73 1084x73 1094x73 1124x73 1230x14
+    76s  GPS        sats 16 HDOP  1.02 age    - base    - | streaming, 968 B/s | RTCM 1006x15 1008x14 1013x1 1033x14 1074x75 1084x75 1094x75 1124x75 1230x14
+    78s  GPS        sats 16 HDOP  1.02 age    - base    - | streaming, 988 B/s | RTCM 1006x15 1008x15 1013x1 1033x15 1074x77 1084x77 1094x77 1124x77 1230x15
+    80s  GPS        sats 16 HDOP  1.02 age    - base    - | streaming, 968 B/s | RTCM 1006x16 1008x15 1013x1 1033x15 1074x79 1084x79 1094x79 1124x79 1230x15
+    82s  GPS        sats 16 HDOP  1.02 age    - base    - | streaming, 988 B/s | RTCM 1006x16 1008x16 1013x1 1033x16 1074x81 1084x81 1094x81 1124x81 1230x16
+    84s  GPS        sats 16 HDOP  1.02 age    - base    - | streaming, 0 B/s | RTCM 1006x16 1008x16 1013x1 1033x16 1074x81 1084x81 1094x81 1124x81 1230x16
+    86s  GPS        sats 16 HDOP  1.02 age    - base    - | streaming, 0 B/s | RTCM 1006x16 1008x16 1013x1 1033x16 1074x81 1084x81 1094x81 1124x81 1230x16
+    88s  GPS        sats 16 HDOP  1.02 age    - base    - | reconnecting (timed out), 0 B/s | RTCM 1006x16 1008x16 1013x1 1033x16 1074x81 1084x81 1094x81 1124x81 1230x16
+    90s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 38 B/s | RTCM 1006x16 1008x16 1013x1 1033x16 1074x81 1084x81 1094x81 1124x81 1230x16
+    92s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 988 B/s | RTCM 1006x16 1008x17 1013x1 1033x17 1074x83 1084x83 1094x83 1124x83 1230x17
+    94s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 955 B/s | RTCM 1006x16 1008x17 1013x1 1033x17 1074x85 1084x85 1094x85 1124x85 1230x17
+    96s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 955 B/s | RTCM 1006x17 1008x17 1013x1 1033x17 1074x87 1084x87 1094x87 1124x87 1230x17
+    98s  GPS        sats 15 HDOP  1.03 age    - base    - | streaming, 1002 B/s | RTCM 1006x17 1008x18 1013x1 1033x18 1074x89 1084x89 1094x89 1124x89 1230x18
+   100s  GPS        sats 15 HDOP  1.03 age    - base    - | streaming, 968 B/s | RTCM 1006x18 1008x18 1013x1 1033x18 1074x91 1084x91 1094x91 1124x91 1230x18
+   102s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 988 B/s | RTCM 1006x18 1008x19 1013x1 1033x19 1074x93 1084x93 1094x93 1124x93 1230x19
+   104s  GPS        sats 15 HDOP  1.03 age    - base    - | streaming, 942 B/s | RTCM 1006x18 1008x19 1013x1 1033x19 1074x95 1084x95 1094x95 1124x95 1230x19
+   106s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 968 B/s | RTCM 1006x19 1008x19 1013x1 1033x19 1074x97 1084x97 1094x97 1124x97 1230x19
+   108s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 1002 B/s | RTCM 1006x19 1008x20 1013x1 1033x20 1074x99 1084x99 1094x99 1124x99 1230x20
+   110s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 968 B/s | RTCM 1006x20 1008x20 1013x1 1033x20 1074x101 1084x101 1094x101 1124x101 1230x20
+   112s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 1002 B/s | RTCM 1006x20 1008x21 1013x1 1033x21 1074x103 1084x103 1094x103 1124x103 1230x21
+   114s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 948 B/s | RTCM 1006x20 1008x21 1013x1 1033x21 1074x105 1084x105 1094x105 1124x105 1230x21
+   116s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 961 B/s | RTCM 1006x21 1008x21 1013x1 1033x21 1074x107 1084x107 1094x107 1124x107 1230x21
+   118s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 999 B/s | RTCM 1006x21 1008x22 1013x1 1033x22 1074x109 1084x109 1094x109 1124x109 1230x22
+   120s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 968 B/s | RTCM 1006x22 1008x22 1013x1 1033x22 1074x111 1084x111 1094x111 1124x111 1230x22
+   122s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 988 B/s | RTCM 1006x22 1008x23 1013x1 1033x23 1074x113 1084x113 1094x113 1124x113 1230x23
+   124s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 940 B/s | RTCM 1006x22 1008x23 1013x1 1033x23 1074x115 1084x115 1094x115 1124x115 1230x23
+   126s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 954 B/s | RTCM 1006x23 1008x23 1013x1 1033x23 1074x117 1084x117 1094x117 1124x117 1230x23
+   128s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 999 B/s | RTCM 1006x23 1008x24 1013x1 1033x24 1074x119 1084x119 1094x119 1124x119 1230x24
+   130s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 966 B/s | RTCM 1006x24 1008x24 1013x1 1033x24 1074x121 1084x121 1094x121 1124x121 1230x24
+   132s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 999 B/s | RTCM 1006x24 1008x25 1013x1 1033x25 1074x123 1084x123 1094x123 1124x123 1230x25
+   134s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 955 B/s | RTCM 1006x24 1008x25 1013x1 1033x25 1074x125 1084x125 1094x125 1124x125 1230x25
+   136s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 968 B/s | RTCM 1006x25 1008x25 1013x1 1033x25 1074x127 1084x127 1094x127 1124x127 1230x25
+   138s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 988 B/s | RTCM 1006x25 1008x26 1013x1 1033x26 1074x129 1084x129 1094x129 1124x129 1230x26
+   140s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 942 B/s | RTCM 1006x26 1008x26 1013x1 1033x26 1074x131 1084x131 1094x131 1124x131 1230x26
+   142s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 981 B/s | RTCM 1006x26 1008x27 1013x1 1033x27 1074x133 1084x133 1094x133 1124x133 1230x27
+   144s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 948 B/s | RTCM 1006x26 1008x27 1013x2 1033x27 1074x135 1084x135 1094x135 1124x135 1230x27
+   146s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 961 B/s | RTCM 1006x27 1008x27 1013x2 1033x27 1074x137 1084x137 1094x137 1124x137 1230x27
+   148s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 987 B/s | RTCM 1006x27 1008x28 1013x2 1033x28 1074x139 1084x139 1094x139 1124x139 1230x28
+   150s  GPS        sats 16 HDOP  1.03 age    - base    - | streaming, 954 B/s | RTCM 1006x28 1008x28 1013x2 1033x28 1074x141 1084x141 1094x141 1124x141 1230x28
+time to each fix type: GPS 2 s

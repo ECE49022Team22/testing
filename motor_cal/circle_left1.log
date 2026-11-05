@@ -1,0 +1,12 @@
+gyro bias -0.01 deg/s (removed)
+nearest obstacle 1910 mm at 342 deg; stop distance 500 mm
+circle: diameter 2.0 m, left, 0.2 m/s, track 95.0 cm -> wheels L 9.9 R 27.7 RPM, +11.5 deg/s, ~31 s per lap
+    8.0 s: not turning at +9 deg -> recovery #1
+   10.3 s: wheel slip/lift at +16 deg -> recovery #2
+   20.4 s: not turning at +92 deg -> recovery #3
+   27.8 s: not turning at +124 deg -> recovery #4
+   32.5 s: not turning at +128 deg -> recovery #5
+   36.2 s: not turning at +129 deg -> recovery #6
+turned +128 deg; wheels travelled L 1.31 m, R 10.43 m, centre 5.87 m (a 2.0 m circle is 6.28 m); STOPPED: not turning: gave up after 5 recoveries
+radius from wheels and gyro: 2.63 m (target 1.00 m)
+recoveries: 6  events (t s, why, heading deg): [(8.0, 'not turning', 9), (10.3, 'wheel slip/lift', 16), (20.4, 'not turning', 92), (27.8, 'not turning', 124), (32.5, 'not turning', 128), (36.2, 'not turning', 129)]

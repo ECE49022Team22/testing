@@ -1,0 +1,9 @@
+m2 Kp 0.089 m2 alone   60 RPM: m2 mean  +60.2 jit 0.7 over  1.2%
+m2 Kp 0.089 m2 alone  120 RPM: m2 mean +120.0 jit 0.9 over  1.1%
+m2 Kp 0.089 both       60 RPM: m2 mean  +59.8 jit 0.8 over  1.2% | m1 mean  -59.9 jit 0.8 over  1.2%
+m2 Kp 0.089 both      120 RPM: m2 mean +120.0 jit 0.8 over  1.1% | m1 mean -120.0 jit 0.6 over  1.1%
+m2 Kp 0.066 m2 alone   60 RPM: m2 mean  +60.3 jit 0.7 over  1.2%
+m2 Kp 0.066 m2 alone  120 RPM: m2 mean +120.0 jit 0.9 over  1.1%
+m2 Kp 0.066 both       60 RPM: m2 mean  +60.0 jit 0.8 over  1.2% | m1 mean  -60.0 jit 0.8 over  1.2%
+m2 Kp 0.066 both      120 RPM: m2 mean +120.0 jit 0.6 over  1.1% | m1 mean -120.0 jit 0.8 over  1.1%
+done

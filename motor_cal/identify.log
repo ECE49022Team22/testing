@@ -1,0 +1,5 @@
+10:45:25 motor 1 start
+   motor 1: 21.0 RPM, 2068 counts = 2.75 output-shaft turns; other encoder moved 0 counts
+10:45:37 motor 2 start
+   motor 2: 21.1 RPM, 2053 counts = 2.73 output-shaft turns; other encoder moved 0 counts
+done

@@ -1,0 +1,16 @@
+gyro bias -0.00 deg/s (removed)
+nearest obstacle 1437 mm at 123 deg; stop distance 500 mm
+q=+1.00 fwd  wheels L  +31.4 R  +31.4 RPM  duty L   +21% R   +20%  yaw   -0.0 deg/s (turned    +0)  eff track   nan cm  radius   +inf m
+q=+1.00 back wheels L  -31.3 R  -31.4 RPM  duty L   -20% R   -20%  yaw   +0.0 deg/s (turned    +0)  eff track   nan cm  radius   +inf m
+q=+0.75 fwd  wheels L  +27.4 R  +26.0 RPM  duty L   +34% R    +6%  yaw   -0.6 deg/s (turned    -3)  eff track   151 cm  radius -27.90 m
+q=+0.75 back wheels L  -27.6 R  -26.0 RPM  duty L   -32% R    -6%  yaw   +1.0 deg/s (turned    +3)  eff track   100 cm  radius -17.04 m
+q=+0.50 fwd  wheels L  +24.4 R  +19.7 RPM  duty L   +47% R    -6%  yaw   -2.9 deg/s (turned   -15)  eff track    99 cm  radius  -4.71 m
+q=+0.50 back wheels L  -24.9 R  -19.5 RPM  duty L   -44% R    +6%  yaw   +3.3 deg/s (turned   +14)  eff track    99 cm  radius  -4.13 m
+q=+0.25 fwd  wheels L  +22.7 R  +12.2 RPM  duty L   +57% R   -16%  yaw   -6.8 deg/s (turned   -27)  eff track    94 cm  radius  -1.56 m
+q=+0.25 back wheels L  -23.5 R  -12.3 RPM  duty L   -55% R   +15%  yaw   +7.7 deg/s (turned   +30)  eff track    88 cm  radius  -1.41 m
+q=+0.00 fwd  wheels L  +27.9 R  +25.4 RPM  duty L   +44% R    +0%  yaw   -1.3 deg/s (turned    -5)  eff track   122 cm  radius -12.60 m
+q=+0.00 back wheels L  -28.7 R  -25.7 RPM  duty L   -43% R    +0%  yaw   +1.3 deg/s (turned    +5)  eff track   141 cm  radius -12.75 m
+q=-0.25 fwd  wheels L  +18.3 R   +1.2 RPM  duty L   +76% R   -39%  yaw  -11.0 deg/s (turned   -39)  eff track    95 cm  radius  -0.54 m
+q=-0.25 back wheels L  -18.2 R   -0.8 RPM  duty L   -78% R   +38%  yaw  +10.4 deg/s (turned   +37)  eff track   102 cm  radius  -0.56 m
+q=-0.50 fwd  wheels L   +8.3 R   -0.3 RPM  duty L   +82% R   -57%  yaw   -6.0 deg/s (turned   -14)  eff track    87 cm  radius  -0.41 m  STOPPED: motor stall fault
+log: /home/sdteam22/motor_cal/turnmap_113507.pkl (1172 ticks, 724 scans)

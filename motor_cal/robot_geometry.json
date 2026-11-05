@@ -1,0 +1,9 @@
+{
+ "lidar_front_deg": 271.5,
+ "track_m": 0.95,
+ "gyro_left_sign": 1,
+ "lidar_ccw": false,
+ "spin_shift_deg": -5,
+ "note": "track_m is the EFFECTIVE skid-steer track on tile (turn maps 2026-11-04: 0.88-1.03 m); geometric 0.50 m. Gyro z up (left turn +). LiDAR angles clockwise, robot front ~271.5 deg (straight legs, scan matching). Left wheel = motor 2, right = motor 1.",
+ "track_geometric_m": 0.5
+}

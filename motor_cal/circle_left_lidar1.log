@@ -1,0 +1,7 @@
+gyro bias -0.00 deg/s (removed)
+nearest obstacle 1724 mm at 42 deg; stop distance 500 mm
+circle: diameter 2.0 m, left, 0.2 m/s, track 95.0 cm -> wheels L 9.9 R 27.7 RPM, +11.5 deg/s, ~31 s per lap
+turned +359 deg; wheels travelled L 5.26 m, R 13.69 m, centre 9.48 m (a 2.0 m circle is 6.28 m)
+radius from wheels and gyro: 1.51 m (target 1.00 m)
+LiDAR path: 7.58 m, fitted circle diameter 2.06 m (target 2.0 m), ends 55 cm from the start; wheels say 9.47 m -> slip +20%; 0 of 646 scans unmatched
+plot: /home/sdteam22/motor_cal/circle_left_115807.png
