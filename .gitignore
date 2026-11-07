@@ -7,3 +7,5 @@ demo/logs/
 motor_cal/*.pkl
 motor_cal/hotspot_keepalive.log
 nav/tiles/
+nav/logs/*.mp4
+nav/logs/*_raw.avi

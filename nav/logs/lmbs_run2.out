@@ -1,0 +1,7 @@
+RTK corrections from 108.59.49.226:9000/MSM4_NEAR
+onboard video: recording starts at the first button press
+hold-to-run page: http://172.20.10.8:8100/  or  http://[2607:fb90:bba8:c723:bf96:121b:e947:5c33]:8100/
+waiting for a fix of type no fix/dead reckoning/GPS/RTK fixed/RTK float/DGPS …
+fix: RTK fixed at 40.4285881, -86.9113757
+no GPS: following a local path of 137.29 m through [(0.0, 0.0), (2.0, -0.7), (39.52, -0.7), (39.47, -29.1), (40.29, -38.3), (52.21, -43.77), (89.64, -72.03)] (x forward, y left), by wheels + gyro
+  57.8 s: button held: the path starts here, facing straight ahead

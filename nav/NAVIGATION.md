@@ -20,7 +20,12 @@ Stop the demo first: the follower uses the motors, the GPS port and the LiDAR. T
 .venv/bin/python nav/follow.py route nav/route_lmbs_points.json --lookahead 3   # not ready: GPS too poor near buildings
 ```
 
-It prints a **hold-to-run page**, `http://<pi>:8100/`. Open it on a phone on the same network and hold the big button.
+`.venv/bin/python nav/follow.py teleop` just drives by hand (no path).
+
+It prints a **control page**, `http://<pi>:8100/`, with a HOLD TO RUN button (autonomous), an on-screen **joystick**
+(manual driving, up to `--tele-speed` 0.5 m/s and `--tele-turn` 1 rad/s, spinning in place allowed; let go and it stops
+within 0.5 s; it overrides autonomy while used; the LiDAR still blocks driving forward into things) and **Restart path
+from here** (re-anchors a `local` path / `--no-gps` line to the robot's current pose at the next hold). Open it on a phone on the same network and hold the big button.
 The robot moves **only while the button is held**, and stops within ~0.5 s of letting go, of the page being hidden,
 or of the network dropping. With the phone hotspot giving only IPv6, the address is `http://[<pi IPv6>]:8100/`.
 
@@ -28,6 +33,9 @@ or of the network dropping. With the phone hotspot giving only IPv6, the address
   pressed**, so position it before pressing. `local` never uses GPS. `--side right` mirrors its points.
 - **GPS modes:** they wait for RTK float or fixed (about a minute after a restart). The RTK client starts
   automatically. Without an IPv4 route it reaches the caster through NAT64 (`64:ff9b::108.59.49.226`).
+- **Onboard video:** the robot's camera (mounted upside down, so rotated 180°) records from the first hold or joystick
+  use, with the run status drawn on each frame, to `logs/follow_<mode>_<time>.mp4` (H.264). Videos are not committed
+  (10-20 MB each); they stay on the Pi. `--no-video` turns it off.
 - **Stop file:** `touch ~/motor_cal/STOP` ends a run. Every run writes `logs/follow_<mode>_<time>.json` plus
   `_route.json` and `_track.json`.
 
@@ -128,7 +136,30 @@ heading within ±0.2° (−0.3 to +0.2°), estimated off-line ≤ 0.5 cm (mean 1
    same way run after run, and the heading from 2 m of track varied by 24°. Signal strength was low too
    (24–32 dB-Hz, see GEM1305_CONFIG.md).
 
+### Toward LMBS, evening of 7 Nov (dark, `local` mode, 0.3 m/s, look-ahead 1.5 m)
+
+- **Finding the start without moving the robot:** RTK float (no fixed in 140 s) put the robot **inside BHEE**, ~8 m
+  off. Matching a LiDAR scan to OSM building outlines (`map_localize.py`) was **ambiguous** there (best two poses 30 m
+  apart, scores within 0.3 cm): in the recessed entrance the LiDAR mostly sees plants and benches. What worked: the
+  user's description (the walkway from BHEE's recessed entrance to the Northwestern Ave bus stop) and a pace count
+  (33 steps ≈ 25 m) for the first leg.
+- **Run 1** (log `180813`, video): 25 m out of the entrance walkway, right turn onto the Northwestern sidewalk in about
+  the right place (heading −82° vs −89° planned), "really close but slightly offset". Re-anchored by hand on the left
+  of the sidewalk; the remaining route was shifted 0.7 m right to the sidewalk centre (`route_lmbs_local_sidewalk.txt`).
+- **Run 2** (video `181324` only): **the Pi browned out and rebooted** about a minute in (`vcgencmd get_throttled`
+  0x50000: undervoltage + throttling since boot) - the battery sagging under the motors. The STM32 reset too, so the
+  motors stopped; the follower's log was lost because it's only written at the end.
+- With the robot out of the courtyard the receiver reached **RTK fixed (24 sats)**. Against the no-GPS runs' own
+  paths (accurate to centimetres), RTK fixed was ~10 cm off and float 15-42 cm, with metres of error near BHEE.
+
 ## 6. Next steps
+
+0. **Safety, from the brownout:**
+   - **STM32 command watchdog:** stop the motors if no command arrives for ~0.5 s. Today the firmware keeps the last
+     target forever, so if the Pi crashes while the STM32 keeps power, the robot keeps driving.
+   - **Power:** the Pi browned out under motor load. Check the battery charge / the Pi's supply (separate regulator,
+     bulk capacitance) before longer runs.
+   - **Write the follower log as it goes** (it was lost in the reboot).
 
 1. ~~L-shaped path~~ done (L3). Smooth the corner "snap": limit the yaw-rate integral build-up while the
    taped wheels haven't broken free yet.

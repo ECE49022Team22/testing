@@ -1,0 +1,6 @@
+hold-to-run page: http://10.165.13.249:8100/
+waiting for a fix of type DGPS/no fix/RTK fixed/RTK float/dead reckoning/GPS …
+teleop: drive with the joystick on the page (no path)
+stopped: STOP file
+log: /home/sdteam22/testing/nav/logs/follow_teleop_20261107_183734.json
+GPS jumps rejected: 0, GPS fixes ignored by the fusion gate: 0 (resets to GPS: 0), stall faults: 0

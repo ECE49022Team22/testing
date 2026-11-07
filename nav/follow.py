@@ -23,6 +23,8 @@ How it works:
   stop if anything at all is within --near-m; stop if the LiDAR goes quiet. It resumes on its own once clear.
 - Also stops on: button released, GPS fix lost or older than 1 s, motor fault, ~/motor_cal/STOP, --max-s.
 Every tick is logged to nav/logs/follow_<time>.json and the track is drawn on the map at the end.
+Onboard video: the robot's USB camera records from the first button press to the end of the run, with the run
+status drawn on each frame, saved as nav/logs/follow_<mode>_<time>.mp4 (H.264, plays on phones). --no-video skips it.
 """
 import argparse
 import http.server
@@ -156,18 +158,38 @@ class Path:
 
 
 # ---------------------------------------------------------------- hold-to-run page
-PAGE = """<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Robot hold-to-run</title><style>
-body{font-family:system-ui;margin:0;padding:16px;background:#111;color:#eee;user-select:none;-webkit-user-select:none}
-#b{width:100%;height:46vh;border-radius:18px;border:0;font-size:2em;font-weight:700;background:#2a78d6;color:#fff;touch-action:none}
-#b.on{background:#1baf7a}#s{font-size:1.05em;line-height:1.5;margin-top:14px;white-space:pre-wrap}.bad{color:#ff6b6b}
-</style></head><body><button id=b>HOLD TO RUN</button><div id=s>connecting…</div><script>
+PAGE = """<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Robot control</title><style>
+body{font-family:system-ui;margin:0;padding:12px;background:#111;color:#eee;user-select:none;-webkit-user-select:none;touch-action:none}
+button{border:0;border-radius:14px;font-weight:700;color:#fff;touch-action:none}
+#b{width:100%;height:20vh;font-size:1.6em;background:#2a78d6}#b.on{background:#1baf7a}
+#pad{position:relative;width:min(88vw,46vh);height:min(88vw,46vh);margin:12px auto 6px;border-radius:50%;background:#222;border:2px solid #444;touch-action:none}
+#knob{position:absolute;width:26%;height:26%;border-radius:50%;background:#eb6834;left:37%;top:37%;pointer-events:none}
+#pad .l{position:absolute;width:100%;text-align:center;color:#777;font-size:.8em}
+#r{width:100%;height:6vh;font-size:1em;background:#444;margin-top:6px}
+#s{font-size:.95em;line-height:1.45;margin-top:8px}.bad{color:#ff6b6b}
+</style></head><body>
+<button id=b>HOLD TO RUN (autonomous)</button>
+<div id=pad><div class=l style="top:4%">forward</div><div class=l style="bottom:4%">back</div><div id=knob></div></div>
+<div style="text-align:center;color:#888;font-size:.85em">drag to drive by hand &middot; let go to stop</div>
+<button id=r>Restart path from here</button>
+<div id=s>connecting…</div><script>
 const b=document.getElementById('b');let t=null;
 function hold(){fetch('/hold',{method:'POST'}).catch(()=>{});}
 function down(e){e.preventDefault();b.classList.add('on');b.textContent='RUNNING';hold();clearInterval(t);t=setInterval(hold,200);}
-function up(){clearInterval(t);t=null;b.classList.remove('on');b.textContent='HOLD TO RUN';fetch('/release',{method:'POST'}).catch(()=>{});}
+function up(){clearInterval(t);t=null;b.classList.remove('on');b.textContent='HOLD TO RUN (autonomous)';fetch('/release',{method:'POST'}).catch(()=>{});}
 b.addEventListener('pointerdown',down);['pointerup','pointercancel','pointerleave'].forEach(x=>b.addEventListener(x,up));
-document.addEventListener('visibilitychange',()=>{if(document.hidden)up();});
+const pad=document.getElementById('pad'),knob=document.getElementById('knob');let jv=0,jw=0,jt=null,jid=null;
+function tele(){fetch('/tele?v='+jv.toFixed(3)+'&w='+jw.toFixed(3),{method:'POST'}).catch(()=>{});}
+function jmove(e){const r=pad.getBoundingClientRect();let x=(e.clientX-r.left)/r.width*2-1,y=(e.clientY-r.top)/r.height*2-1;
+const m=Math.hypot(x,y);if(m>1){x/=m;y/=m;}jv=-y;jw=-x;knob.style.left=(37+x*37)+'%';knob.style.top=(37+y*37)+'%';}
+pad.addEventListener('pointerdown',e=>{e.preventDefault();jid=e.pointerId;pad.setPointerCapture(jid);jmove(e);tele();clearInterval(jt);jt=setInterval(tele,150);});
+pad.addEventListener('pointermove',e=>{if(e.pointerId===jid)jmove(e);});
+function jup(){clearInterval(jt);jt=null;jid=null;jv=0;jw=0;knob.style.left='37%';knob.style.top='37%';
+fetch('/tele?v=0&w=0',{method:'POST'}).catch(()=>{});}
+['pointerup','pointercancel','lostpointercapture'].forEach(x=>pad.addEventListener(x,jup));
+document.getElementById('r').addEventListener('click',()=>fetch('/rearm',{method:'POST'}));
+document.addEventListener('visibilitychange',()=>{if(document.hidden){up();jup();}});
 setInterval(()=>fetch('/status').then(r=>r.json()).then(j=>{document.getElementById('s').innerHTML=j.html;}).catch(()=>{
 document.getElementById('s').innerHTML='<span class=bad>lost the robot</span>';}),400);
 </script></body></html>"""
@@ -204,6 +226,16 @@ def start_page(port, st):
                 st["hold_t"] = time.monotonic()
             elif self.path.startswith("/release"):
                 st["hold_t"] = 0.0
+            elif self.path.startswith("/tele"):                       # joystick: v, w in -1..1, renewed every 150 ms
+                from urllib.parse import parse_qs, urlparse
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    v, w = (max(-1.0, min(1.0, float(q.get(k, ["0"])[0]))) for k in ("v", "w"))
+                    st["tele"] = (v, w, time.monotonic())
+                except ValueError:
+                    pass
+            elif self.path.startswith("/rearm"):
+                st["rearm"] = True
             self._send(200, "text/plain", b"ok")
 
     srv = Server(("::", port), H)
@@ -223,6 +255,68 @@ def page_urls(port):
         except Exception:
             pass
     return out
+
+
+# ---------------------------------------------------------------- onboard video
+class Recorder(threading.Thread):
+    """Records the robot's USB camera with a status overlay. Writes MJPEG while running (cheap), converts to an
+    H.264 MP4 at the end. Records only while self.on is set (from the first button press)."""
+
+    FPS = 15
+
+    def __init__(self, raw_path, rotate=180):
+        super().__init__(daemon=True)
+        self.rotate = rotate                       # the robot's camera is mounted upside down (7 Nov)
+        import cv2
+        from latest_camera import LatestFrameCamera
+        self.cv2, self.raw_path = cv2, raw_path
+        self.cam = LatestFrameCamera(0, 640, 480, 30)
+        self.lines, self.on, self.stop_ev, self.frames = [], threading.Event(), threading.Event(), 0
+        self.writer = None
+
+    def run(self):
+        cv2 = self.cv2
+        nxt = time.monotonic()
+        while not self.stop_ev.is_set():
+            frame, _ = self.cam.read(timeout=0.5)
+            if frame is None or not self.on.is_set():
+                continue
+            now = time.monotonic()
+            if now < nxt:
+                continue
+            nxt = max(nxt + 1 / self.FPS, now - 0.5)
+            if self.rotate:
+                frame = cv2.rotate(frame, {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
+                                           270: cv2.ROTATE_90_COUNTERCLOCKWISE}[self.rotate])
+            if self.writer is None:
+                h, w = frame.shape[:2]
+                self.writer = cv2.VideoWriter(self.raw_path, cv2.VideoWriter_fourcc(*"MJPG"), self.FPS, (w, h))
+            lines = list(self.lines)
+            pad = 6 + 20 * len(lines)
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (frame.shape[1], pad), (0, 0, 0), -1)
+            frame = cv2.addWeighted(overlay, 0.55, frame, 0.45, 0)
+            for i, (text, color) in enumerate(lines):
+                cv2.putText(frame, text, (8, 20 + 20 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
+            self.writer.write(frame)
+            self.frames += 1
+
+    def finish(self, mp4_path):
+        """Stop, release the camera, convert to H.264 MP4. Returns the MP4 path or None."""
+        self.stop_ev.set()
+        self.join(timeout=3)
+        self.cam.release()
+        if self.writer is None:
+            return None
+        self.writer.release()
+        import subprocess
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", self.raw_path, "-c:v", "libx264", "-preset", "veryfast",
+                            "-crf", "26", "-vf", "scale=out_range=tv,format=yuv420p", "-movflags", "+faststart", mp4_path], capture_output=True, text=True)
+        if r.returncode == 0:
+            os.remove(self.raw_path)
+            return mp4_path
+        print(f"video conversion failed ({r.stderr.strip()[:200]}); raw MJPEG kept at {self.raw_path}", flush=True)
+        return self.raw_path
 
 
 # ---------------------------------------------------------------- LiDAR guard
@@ -251,7 +345,7 @@ def lidar_check(lid, a):
 # ---------------------------------------------------------------- main loop
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=("line", "route", "local"))
+    ap.add_argument("mode", choices=("line", "route", "local", "teleop"))
     ap.add_argument("route_file", nargs="?", help="route: JSON list of [lat, lon]")
     ap.add_argument("--length", type=float, default=10.0, help="line: metres to drive")
     ap.add_argument("--points", default="0,0 1,0 2,1 4,1",
@@ -275,6 +369,11 @@ def main():
     ap.add_argument("--inner-min", type=float, default=0.3, help="inner wheel never below this fraction of the outer")
     ap.add_argument("--port", type=int, default=8100, help="hold-to-run page port")
     ap.add_argument("--no-ntrip", action="store_true", help="don't start the RTK client (plain GPS)")
+    ap.add_argument("--no-video", action="store_true", help="don't record the onboard camera")
+    ap.add_argument("--tele-speed", type=float, default=0.5, help="joystick full forward, m/s")
+    ap.add_argument("--tele-turn", type=float, default=1.0, help="joystick full turn, rad/s (spinning in place allowed)")
+    ap.add_argument("--video-rotate", type=int, choices=(0, 90, 180, 270), default=180,
+                    help="rotate the onboard video (default 180: the camera is mounted upside down)")
     ap.add_argument("--no-gps", action="store_true",
                     help="line: no GPS at all. The line runs straight ahead from where the robot points at the start, "
                          "followed by wheels + gyro (tests the controller on its own)")
@@ -298,6 +397,17 @@ def main():
     imu = rd.Imu(); imu.start()
     mcu = rd.Stm32()
     st = {"hold_t": 0.0, "html": "starting…"}
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    rec = None
+    if not a.no_video:
+        try:
+            os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
+            rec = Recorder(os.path.join(HERE, "logs", f"follow_{a.mode}_{stamp}_raw.avi"), a.video_rotate)
+            rec.start()
+            print("onboard video: recording starts at the first button press", flush=True)
+        except Exception as e:
+            print(f"onboard video unavailable: {e!r}", flush=True)
+            rec = None
     srv = start_page(a.port, st)
     print("hold-to-run page: " + "  or  ".join(page_urls(a.port)), flush=True)
 
@@ -312,7 +422,7 @@ def main():
         xs.append(imu.gz); time.sleep(0.01)
     imu.bias = sum(xs) / len(xs); imu.yaw = 0.0
 
-    if a.mode == "local":
+    if a.mode in ("local", "teleop"):
         a.no_gps = True                                              # local paths are always relative to the start pose
     if a.no_gps:
         if a.mode == "route":
@@ -346,7 +456,11 @@ def main():
          "track": [], "last_gga": None, "pos": None, "pos_t": 0.0, "course_pts": []}
     if a.no_gps:                                                     # robot at (0, 0) facing +x
         S.update(phase="follow", heading=0.0, yaw0=imu.yaw, fused=(0.0, 0.0))
-        if a.mode == "local":
+        if a.mode == "teleop":
+            route = None
+            S["phase"] = "teleop"
+            print("teleop: drive with the joystick on the page (no path)", flush=True)
+        elif a.mode == "local":
             sgn = -1.0 if a.side == "right" else 1.0
             pts = [tuple(float(v) for v in p.split(",")) for p in a.points.split()]
             route = Path([(px, sgn * py) for px, py in pts])
@@ -466,12 +580,23 @@ def main():
             elif lid_k == 0.0:
                 pause = lid_why
 
+            # ---- joystick (manual driving) overrides autonomy while it's being used
+            tele = st.get("tele")
+            manual = tele is not None and now - tele[2] < 0.5 and (abs(tele[0]) > 0.02 or abs(tele[1]) > 0.02)
+            if manual:
+                pause = "manual driving (joystick)"
+            if st.pop("rearm", False) and a.no_gps and a.mode != "teleop":
+                S["armed"] = False
+                print(f"{now - t_start:6.1f} s: path re-anchored: it restarts from the robot's pose at the next hold", flush=True)
+
             # ---- no-GPS line: it starts from the robot's pose the first time the button is held
-            if a.no_gps and not S.get("armed") and held:
+            if a.no_gps and a.mode != "teleop" and not S.get("armed") and held and not manual:
                 S.update(armed=True, yaw0=imu.yaw, fused=(0.0, 0.0), s=0.0, i=0.0)
                 print(f"{now - t_start:6.1f} s: button held: the path starts here, facing straight ahead", flush=True)
-            if a.no_gps and not S.get("armed"):
-                pause = pause or "press and hold to start the line from here"
+            if a.no_gps and a.mode != "teleop" and not S.get("armed"):
+                pause = pause or "press and hold to start the path from here"
+            if a.mode == "teleop" and not manual:
+                pause = "teleop: use the joystick"
 
             # ---- control
             v = w = 0.0
@@ -530,19 +655,39 @@ def main():
                 lo = a.inner_min * max(vl, vr)                           # inner wheel keeps rolling forward
                 vl, vr = max(vl, lo), max(vr, lo)
             S["v_cmd"] = v
-            if pause or v <= 0:
+            if manual:
+                tv, tw = tele[0] * a.tele_speed, tele[1] * a.tele_turn
+                if tv > 0 and lid_k == 0.0:                               # LiDAR blocks driving forward into things
+                    tv = 0.0
+                mvl, mvr = tv - tw * TRACK_EFF / 2, tv + tw * TRACK_EFF / 2
+                mcu.drive(rd.rpm_for(mvl), rd.rpm_for(mvr))
+            elif pause or v <= 0:
                 mcu.drive(0.0, 0.0)
             else:
                 mcu.drive(rd.rpm_for(vl), rd.rpm_for(vr))
 
             # ---- status + log
             fx = fix or {}
+            prog = "teleop" if a.mode == "teleop" else f"progress {S['s']:.1f} / {route.length if route else a.length:.1f} m"
             st["html"] = (f"<b>{'PAUSED: ' + pause if pause else ('RUNNING' if S['phase'] == 'follow' else 'finding heading')}</b>"
                           f"{'<br>' + lid_why if lid_why and not pause else ''}<br>"
                           f"GPS {FIX_NAMES.get(fx.get('q'), '?')}, {fx.get('sats', 0)} sats, age {fx.get('age') or '-'}<br>"
-                          f"progress {S['s']:.1f} / {route.length if route else a.length:.1f} m"
+                          f"{prog}"
                           f"{f', off line {xt:+.2f} m' if xt is not None else ''}<br>"
                           f"heading {math.degrees(head) if head is not None else float('nan'):.0f} deg, speed {v:.2f} m/s")
+            if rec is not None:
+                if (held or manual) and not rec.on.is_set():
+                    rec.on.set()
+                white, red, yellow, green = (255, 255, 255), (80, 80, 255), (0, 220, 255), (120, 230, 120)
+                state = (f"PAUSED: {pause}", red) if pause else (("RUNNING" if S["phase"] == "follow" else "finding heading"), green)
+                rec.lines = [
+                    (f"{time.strftime('%H:%M:%S')}  t+{now - t_start:5.1f} s  {a.mode}  {route.length if route else a.length:.1f} m  "
+                     f"look-ahead {a.lookahead:g} m", white),
+                    (state[0][:70], state[1]),
+                    (f"at {S['s']:.2f} m  off path {f'{xt:+.2f}' if xt is not None else '-'} m  "
+                     f"heading {math.degrees(head) if head is not None else float('nan'):+.0f} deg  {v:.2f} m/s", white),
+                    (f"GPS {FIX_NAMES.get(fx.get('q'), '?')} {fx.get('sats', 0)} sats" + (f"   LiDAR: {lid_why}" if lid_why else ""),
+                     yellow if lid_why else white)]
             (ml, mr), _ = mcu.wheels()
             gx, gy = S["pos"] if S["pos"] else (float("nan"), float("nan"))
             log.append(dict(t=round(now - t_start, 3), phase=S["phase"], x=round(x, 3), y=round(y, 3),
@@ -560,7 +705,6 @@ def main():
         st["html"] = f"<b>STOPPED: {reason}</b>"
         print(f"stopped: {reason}", flush=True)
         os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
-        stamp = time.strftime("%Y%m%d_%H%M%S")
         out = os.path.join(HERE, "logs", f"follow_{a.mode}_{stamp}.json")
         route_ll = [enu.back(*p) for p in route.p] if route and not a.no_gps else []
         json.dump(dict(args=vars(a), reason=reason, origin=[enu.lat0, enu.lon0], route=route_ll,
@@ -572,13 +716,17 @@ def main():
         if S.get("fused") is not None and S["pos"] is not None:
             print(f"at the end the GPS and the fused pose differed by {math.dist(S['fused'], S['pos']):.2f} m", flush=True)
         f = [r for r in log if r["phase"] == "follow" and r["xt"] is not None and not r["pause"]]
-        if f:
+        if f and route:
             xts = [abs(r["xt"]) for r in f]
             print(f"off-line distance while following: mean {sum(xts) / len(xts):.2f} m, max {max(xts):.2f} m, "
                   f"progress {S['s']:.1f} of {route.length:.1f} m", flush=True)
         if S["track"] and route_ll:
             json.dump([[p[1], p[2]] for p in S["track"]], open(out.replace(".json", "_track.json"), "w"))
             json.dump(route_ll, open(out.replace(".json", "_route.json"), "w"))
+        if rec is not None:
+            vid = rec.finish(out.replace(".json", ".mp4"))
+            print(f"video: {vid} ({rec.frames} frames, {rec.frames / Recorder.FPS:.0f} s)" if vid else "video: nothing recorded "
+                  "(the button was never held)", flush=True)
         time.sleep(0.5)
         imu.close(); mcu.close()
 
