@@ -6,3 +6,4 @@ demo/*.log
 demo/logs/
 motor_cal/*.pkl
 motor_cal/hotspot_keepalive.log
+nav/tiles/
