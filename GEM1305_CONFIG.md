@@ -13,17 +13,22 @@ Last updated 2026-11-05. Script: [`gem1305_cfg.py`](gem1305_cfg.py). RTK client:
 - **Where RTK stands (from `ntrip_rtk.py`, 2026-11-05):**
   - The first test sent corrections on UART0, but the Pi's UART0 TX (pin 8) never drives, so nothing reached the
     receiver (`motor_cal/ntrip_test1.log`: ~950 B/s of RTCM for 150 s, fix stuck at plain GPS, no correction age).
-  - Corrections now go out on UART4 TX (pin 32). The receiver reportedly gets them but still doesn't use them.
+  - Corrections now go out on UART4 TX (pin 32). Short tests (26-90 s) showed no change, but a 300 s run outdoors on
+    7 Nov (`motor_cal/ntrip_test2_uart4.log`) reached **RTK float after 64 s** (correction age 1.0 s, base 0005) and
+    held it to the end; RTK fixed didn't appear in 300 s. The receiver needs about a minute of uninterrupted corrections.
 - **Most likely cause:** a receiver setting.
   - **CFG-DGNSS** chooses what the receiver does with corrections: none, SBAS only, code DGPS, RTK float or RTK fixed.
     Anything below RTK float means it never computes RTK.
   - A **fixed base position** (the receiver set up as a base station) also blocks it.
   - `gem1305_cfg.py info` shows both; `rover` fixes both.
+  - **Ruled out on this receiver (7 Nov):** `info` found DGNSS mode already 4 (RTK fixed, pre-filter 0), no fixed base
+    position (ECEF and LLA both zero), survey-in 0 s / 0 mm, and both UARTs at 230400. The receiver settings above are
+    not what's blocking RTK.
 - There is **no "enable RTCM input" setting**: this receiver's port configuration only holds the baud rate.
 
 ## 2. Before you start
 
-**Wiring** (GEM1305 5-pin connector: GND / PPS / RX / TX / 5V):
+**Wiring** (GEM1305 6-pin 1.25 mm connector, pin 1 to 6: GND / NC / PPS / RX / TX / 5V; pin 2 is unused):
 
 | GEM1305 | Pi header | Linux device | Used for |
 |---|---|---|---|
