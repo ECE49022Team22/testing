@@ -1,0 +1,11 @@
+RTK corrections from 64:ff9b::6c3b:31e2:9000/MSM4_NEAR
+hold-to-run page: http://[2607:fb90:bba8:c723:bf96:121b:e947:5c33]:8100/
+waiting for a fix of type RTK fixed/RTK float …
+fix: RTK float at 40.4284847, -86.9115917
+heading fit: 71 RTK points over 2.07 m, scatter 12.0 cm
+heading from the first 2.1 m: 71.9 deg (from east, CCW); route 10.0 m, now at 2.1 m
+stopped: STOP file
+log: /home/sdteam22/testing/nav/logs/follow_line_20261107_171947.json
+GPS jumps rejected: 9, GPS fixes ignored by the fusion gate: 2 (resets to GPS: 0), stall faults: 0
+at the end the GPS and the fused pose differed by 3.26 m
+off-line distance while following: mean 0.57 m, max 0.92 m, progress 4.1 of 10.0 m

@@ -1,0 +1,11 @@
+RTK corrections from 64:ff9b::6c3b:31e2:9000/MSM4_NEAR
+hold-to-run page: http://[2607:fb90:bba8:c723:bf96:121b:e947:5c33]:8100/
+waiting for a fix of type RTK fixed/RTK float/dead reckoning/no fix/GPS/DGPS …
+fix: RTK float at 40.4284969, -86.9116158
+no GPS: following a 10.0 m line straight ahead of the start, by wheels + gyro
+  22.2 s: button held: line starts here, straight ahead
+stopped: arrived
+log: /home/sdteam22/testing/nav/logs/follow_line_20261107_173006.json
+GPS jumps rejected: 0, GPS fixes ignored by the fusion gate: 0 (resets to GPS: 0), stall faults: 0
+at the end the GPS and the fused pose differed by 6.15 m
+off-line distance while following: mean 0.01 m, max 0.01 m, progress 9.7 of 10.0 m

@@ -1,0 +1,8 @@
+RTK corrections from 64:ff9b::6c3b:31e2:9000/MSM4_NEAR
+hold-to-run page: http://[2607:fb90:bba8:c723:bf96:121b:e947:5c33]:8100/
+waiting for a fix of type RTK fixed/RTK float …
+fix: RTK float at 40.4285602, -86.9115607
+heading from the first 4.5 m: 74.9 deg (from east, CCW); route 10.0 m, now at 4.5 m
+stopped: motor stall fault
+log: /home/sdteam22/testing/nav/logs/follow_line_20261107_171145.json
+off-line distance while following: mean 0.91 m, max 1.49 m, progress 0.0 of 10.0 m
