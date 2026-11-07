@@ -1,0 +1,11 @@
+RTK corrections from 108.59.49.226:9000/MSM4_NEAR
+hold-to-run page: http://172.20.10.8:8100/  or  http://[2607:fb90:bba8:c723:bf96:121b:e947:5c33]:8100/
+waiting for a fix of type no fix/dead reckoning/DGPS/RTK fixed/GPS/RTK float …
+fix: GPS at 40.4285146, -86.9116087
+no GPS: following a local path of 4.41 m through [(0.0, -0.0), (1.0, -0.0), (2.0, -1.0), (4.0, -1.0)] (x forward, y left), by wheels + gyro
+  38.1 s: button held: the path starts here, facing straight ahead
+stopped: arrived
+log: /home/sdteam22/testing/nav/logs/follow_local_20261107_174849.json
+GPS jumps rejected: 11, GPS fixes ignored by the fusion gate: 0 (resets to GPS: 0), stall faults: 0
+at the end the GPS and the fused pose differed by 3.13 m
+off-line distance while following: mean 0.07 m, max 0.21 m, progress 4.1 of 4.4 m

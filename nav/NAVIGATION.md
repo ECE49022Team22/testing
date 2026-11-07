@@ -1,7 +1,8 @@
 # Autonomous navigation: route planning and path following
 
 Status on 2026-11-07: **straight-line following works** (10 m, ±0.4° heading swing, ~5 mm estimated off-line,
-no GPS). Following a route by GPS does **not** work near buildings yet, because RTK float wanders by metres
+no GPS), and so does **a dog-leg path** (1 m, √2 m at 45°, 2 m) once the rear wheels were taped: worst 0.21 m off
+the path, ending −0.9° to the final leg. Following a route by GPS does **not** work near buildings yet, because RTK float wanders by metres
 there. Code: [`follow.py`](follow.py) (follower), [`route_map.py`](route_map.py) (map plot).
 Logs from the six test runs are in [`logs/`](logs/).
 
@@ -14,6 +15,8 @@ Stop the demo first: the follower uses the motors, the GPS port and the LiDAR. T
 ```bash
 .venv/bin/python nav/follow.py line --length 10 --lookahead 3 --no-gps     # proven: straight line, wheels + gyro
 .venv/bin/python nav/follow.py line --length 10 --lookahead 3 --gps-gain 0  # line direction from GPS, then wheels + gyro
+.venv/bin/python nav/follow.py local --points "0,0 1,0 2,1 4,1" --side right --speed 0.15 --lookahead 1.25
+                                            # proven: dog-leg, points in m from the start pose (x ahead, y left)
 .venv/bin/python nav/follow.py route nav/route_lmbs_points.json --lookahead 3   # not ready: GPS too poor near buildings
 ```
 
@@ -21,8 +24,8 @@ It prints a **hold-to-run page**, `http://<pi>:8100/`. Open it on a phone on the
 The robot moves **only while the button is held**, and stops within ~0.5 s of letting go, of the page being hidden,
 or of the network dropping. With the phone hotspot giving only IPv6, the address is `http://[<pi IPv6>]:8100/`.
 
-- **`--no-gps` line:** the line starts from wherever the robot points **the first time the button is pressed**, so
-  position it before pressing.
+- **`--no-gps` line and `local` path:** the path starts from wherever the robot points **the first time the button is
+  pressed**, so position it before pressing. `local` never uses GPS. `--side right` mirrors its points.
 - **GPS modes:** they wait for RTK float or fixed (about a minute after a restart). The RTK client starts
   automatically. Without an IPv4 route it reaches the caster through NAT64 (`64:ff9b::108.59.49.226`).
 - **Stop file:** `touch ~/motor_cal/STOP` ends a run. Every run writes `logs/follow_<mode>_<time>.json` plus
@@ -55,7 +58,8 @@ deliberately small so a person beside it doesn't stop it.
   the position jumps. Later course corrections from the GPS track are used **only with RTK fixed**. The IMU compass
   isn't used: it's unreliable next to the motors.
 - **Steering:** pure pursuit to the point `--lookahead` ahead on the path gives the curvature, capped at
-  `--min-radius` (1 m). The turn rate goes through the skid-steer model (effective track 0.95 m from `motor_cal`)
+  `--min-radius` (1 m). Past the path's end the target continues along the last segment (`Path.at_extended`), so
+  the robot lines up with the final leg instead of aiming at the end point. The turn rate goes through the skid-steer model (effective track 0.95 m from `motor_cal`)
   with a gyro yaw-rate PI. **No pivots:** speed never drops below `--min-speed` (0.15 m/s) while moving, and the
   inner wheel stays above `--inner-min` (30%) of the outer. Slow, tight turns pivot on the inner wheel, which stalls
   on this chassis. A wheel target is never exactly 0, because the firmware then switches that motor off and it
@@ -92,21 +96,39 @@ All runs were on the walkway beside BHEE, 10 m line, 0.3 m/s, RTK float, robot o
 `172851` is an aborted start of run 6 (stopped before moving). `logs/line_run<N>.out` is each run's console output.
 `logs/line_run4.png` plots run 4's fused path against raw GPS (GPS ~2.6 m off).
 
+### Dog-leg (L) path, `local` mode, right-hand
+
+Path: 1 m straight, √2 m at 45° to the right, 2 m straight (4.41 m), 0.15 m/s, no GPS.
+
+| Run | Log | Setup | Result |
+|---|---|---|---|
+| L1 | `173751` | look-ahead 2 m, plain wheels | Arrived; ended **−20.9°**, 1.41 m right (want 1.0), up to 0.41 m off. **Left turn back to straight: 0.8 of 6.7°/s commanded** (effective track ~5 m): in left turns the right driven wheel slips/lifts |
+| L2 | `174609` | **rear (unpowered) wheels taped** to cut their sideways grip | Arrived; ended −10.4°, 0.94 m right, 0.06 m off. Right turns now achieve 3.9 of 4.0°/s; **turn delay ~1.35 s** (was 2.85-3.3 s). Remaining tilt: with a 2 m look-ahead on a 2 m final leg it aimed at the end point |
+| L3 | `174849` | taped, **look-ahead 1.25 m + extended target** | **Arrived; ended −0.9°, 1.08 m right, worst 0.21 m off, mean 0.07 m** (simulation predicted 0.20 m and +0.7°). One corner still "snaps" (gyro peak 60°/s) as the taped wheels break free |
+
+A small simulation (pure pursuit on the path, with a dead time plus first-order lag on the turn rate, fitted to the
+measured delay) picked the speed and look-ahead before each run and matched L3 closely. Run 7 (`line_run7_tape.out`): 10 m straight with the 1.25 m
+look-ahead at 0.3 m/s on the taped wheels, to check straights don't weave with the shorter look-ahead.
+
 ### Findings
 
 1. **Steering works.** With a 3 m look-ahead, the no-pivot limits and the gyro yaw-rate loop, a straight line is
    followed to centimetres by wheels + gyro.
 2. **Wheels + gyro are accurate over at least 10 m** (run 6 ended where the robot thought it was). The gyro bias
    wanders by about ±0.6°/s, now re-estimated whenever the robot stands still.
-3. **The skid-steer responds ~2.85 s late to turn commands.** Keep the look-ahead ≥ ~3 m at 0.3 m/s (≥ 3× the
-   distance covered in that delay), or add delay compensation.
+3. **The skid-steer responds late to turn commands:** ~2.85 s with plain wheels, ~1.35 s with the rear wheels
+   taped. Keep the look-ahead ≥ ~3× the distance covered in that delay (3 m at 0.3 m/s plain; 1.25 m at 0.15 m/s
+   taped), or add delay compensation.
+5. **Left turns were weak on plain wheels** (outer right wheel slips: 0.8 of 6.7°/s). **Taping the unpowered rear
+   wheels** fixed most of the turning trouble.
 4. **RTK float beside BHEE is unusable for steering:** position wanders by metres for tens of seconds, it's biased the
    same way run after run, and the heading from 2 m of track varied by 24°. Signal strength was low too
    (24–32 dB-Hz, see GEM1305_CONFIG.md).
 
 ## 6. Next steps
 
-1. **L-shaped path** with one gentle turn, to check the 3 m look-ahead through a corner.
+1. ~~L-shaped path~~ done (L3). Smooth the corner "snap": limit the yaw-rate integral build-up while the
+   taped wheels haven't broken free yet.
 2. **Absolute pose without GPS near buildings:**
    - **Start from a known pose:** a marked start spot, pointing along a walkway whose direction comes from the map.
    - **LiDAR alignment:** walkway edges and building walls give an absolute heading all along the LMBS route.

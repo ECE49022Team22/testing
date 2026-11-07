@@ -3,6 +3,7 @@
 
     .venv/bin/python nav/follow.py line [--length 10] [--speed 0.3]     step 2: straight line
     .venv/bin/python nav/follow.py route nav/route_lmbs_points.json      later: a planned route ([lat, lon] list)
+    .venv/bin/python nav/follow.py local --points "0,0 1,0 2,1 4,1"      path in metres from the start pose (no GPS)
 
 Open the hold-to-run page it prints (http://<pi>:8100/) on a phone and hold the button: the robot only moves
 while it's held, and stops within ~0.5 s of letting go. Stop the demo first (it uses the motors and the GPS port).
@@ -133,6 +134,17 @@ class Path:
                 best = (d, self.s[i] + t * math.sqrt(L2), side)
         return best[1], best[2]
 
+    def at_extended(self, s):
+        """Like at(), but past the end it continues along the last segment, so a pure-pursuit target near the end
+        keeps moving along the final leg's direction. Otherwise the robot aims at the end point and arrives at an
+        angle (7 Nov L path: 10 deg off at the end, with a 2 m look-ahead on a 2 m final leg)."""
+        if s <= self.length:
+            return self.at(s)
+        a, b = self.p[-2], self.p[-1]
+        L = math.dist(a, b) or 1e-9
+        k = (s - self.length) / L
+        return b[0] + k * (b[0] - a[0]), b[1] + k * (b[1] - a[1])
+
     def at(self, s):
         s = max(0.0, min(self.length, s))
         for i in range(len(self.p) - 1):
@@ -239,9 +251,13 @@ def lidar_check(lid, a):
 # ---------------------------------------------------------------- main loop
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=("line", "route"))
+    ap.add_argument("mode", choices=("line", "route", "local"))
     ap.add_argument("route_file", nargs="?", help="route: JSON list of [lat, lon]")
     ap.add_argument("--length", type=float, default=10.0, help="line: metres to drive")
+    ap.add_argument("--points", default="0,0 1,0 2,1 4,1",
+                    help='local: path points "x,y x,y ..." in metres, x forward and y to the left of the start pose '
+                         "(default: the L / dog-leg: 1 m, sqrt2 m at 45 deg, 2 m)")
+    ap.add_argument("--side", choices=("left", "right"), default="left", help="local: mirror the path to the right")
     ap.add_argument("--speed", type=float, default=0.3, help="m/s")
     ap.add_argument("--init-m", type=float, default=2.0, help="straight distance used to find the heading")
     ap.add_argument("--lookahead", type=float, default=1.5, help="pure pursuit look-ahead, m")
@@ -296,9 +312,11 @@ def main():
         xs.append(imu.gz); time.sleep(0.01)
     imu.bias = sum(xs) / len(xs); imu.yaw = 0.0
 
+    if a.mode == "local":
+        a.no_gps = True                                              # local paths are always relative to the start pose
     if a.no_gps:
-        if a.mode != "line":
-            sys.exit("--no-gps only works with line")
+        if a.mode == "route":
+            sys.exit("--no-gps works with line and local, not route")
         a.gps_gain = 0.0
         ok_fix = {"0", "1", "2", "4", "5", "6"}
     # --- wait for a usable fix
@@ -326,10 +344,17 @@ def main():
 
     S = {"phase": "init", "heading": None, "yaw0": None, "init_start": None, "s": 0.0, "i": 0.0,
          "track": [], "last_gga": None, "pos": None, "pos_t": 0.0, "course_pts": []}
-    if a.no_gps:                                                     # robot at (0, 0) facing +x; line straight ahead
+    if a.no_gps:                                                     # robot at (0, 0) facing +x
         S.update(phase="follow", heading=0.0, yaw0=imu.yaw, fused=(0.0, 0.0))
-        route = Path([(0.0, 0.0), (a.length, 0.0)])
-        print(f"no GPS: following a {a.length:.1f} m line straight ahead of the start, by wheels + gyro", flush=True)
+        if a.mode == "local":
+            sgn = -1.0 if a.side == "right" else 1.0
+            pts = [tuple(float(v) for v in p.split(",")) for p in a.points.split()]
+            route = Path([(px, sgn * py) for px, py in pts])
+            print(f"no GPS: following a local path of {route.length:.2f} m through "
+                  f"{[(round(px, 2), round(py, 2)) for px, py in route.p]} (x forward, y left), by wheels + gyro", flush=True)
+        else:
+            route = Path([(0.0, 0.0), (a.length, 0.0)])
+            print(f"no GPS: following a {a.length:.1f} m line straight ahead of the start, by wheels + gyro", flush=True)
     log, reason = [], None
     t_start = time.monotonic()
     nxt = t_start
@@ -444,7 +469,7 @@ def main():
             # ---- no-GPS line: it starts from the robot's pose the first time the button is held
             if a.no_gps and not S.get("armed") and held:
                 S.update(armed=True, yaw0=imu.yaw, fused=(0.0, 0.0), s=0.0, i=0.0)
-                print(f"{now - t_start:6.1f} s: button held: line starts here, straight ahead", flush=True)
+                print(f"{now - t_start:6.1f} s: button held: the path starts here, facing straight ahead", flush=True)
             if a.no_gps and not S.get("armed"):
                 pause = pause or "press and hold to start the line from here"
 
@@ -480,7 +505,7 @@ def main():
                 if S["s"] >= route.length - 0.3:
                     reason = "arrived"
                     break
-                tx, ty = route.at(S["s"] + a.lookahead)
+                tx, ty = route.at_extended(S["s"] + a.lookahead)
                 alpha = wrap(math.atan2(ty - y, tx - x) - head)
                 Ld = math.hypot(tx - x, ty - y) or a.lookahead
                 v = a.speed * min(1.0, (route.length - S["s"]) / 1.0 + 0.3)
@@ -537,8 +562,9 @@ def main():
         os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
         stamp = time.strftime("%Y%m%d_%H%M%S")
         out = os.path.join(HERE, "logs", f"follow_{a.mode}_{stamp}.json")
-        route_ll = [enu.back(*p) for p in route.p] if route else []
+        route_ll = [enu.back(*p) for p in route.p] if route and not a.no_gps else []
         json.dump(dict(args=vars(a), reason=reason, origin=[enu.lat0, enu.lon0], route=route_ll,
+                       route_local=[list(p) for p in route.p] if route else [],
                        track=S["track"], log=log), open(out, "w"))
         print(f"log: {out}", flush=True)
         print(f"GPS jumps rejected: {S.get('jumps', 0)}, GPS fixes ignored by the fusion gate: {S.get('gated', 0)} "
