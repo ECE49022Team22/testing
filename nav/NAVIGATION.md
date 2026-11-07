@@ -108,7 +108,10 @@ Path: 1 m straight, √2 m at 45° to the right, 2 m straight (4.41 m), 0.15 m/s
 
 A small simulation (pure pursuit on the path, with a dead time plus first-order lag on the turn rate, fitted to the
 measured delay) picked the speed and look-ahead before each run and matched L3 closely. Run 7 (`line_run7_tape.out`): 10 m straight with the 1.25 m
-look-ahead at 0.3 m/s on the taped wheels, to check straights don't weave with the shorter look-ahead.
+look-ahead at 0.3 m/s on the taped wheels, to check straights don't weave with the shorter look-ahead: **no weave**,
+heading within ±0.2° (−0.3 to +0.2°), estimated off-line ≤ 0.5 cm (mean 1 mm), ended 0.0° to the line (log
+`175149`). Two accidental button releases (1.3 s paused) were picked up cleanly. **One setting now covers both: look-ahead
+1.25 m on the taped wheels.**
 
 ### Findings
 
