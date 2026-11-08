@@ -13,15 +13,17 @@ Per scan (about 10 Hz)  add_scan(scan, odom_pose)
     Log-odds update: +hit at each return, -miss along each beam, robot footprint forced free, positive
     cells slowly fade so people's trails and stale returns disappear.
 Per plan (5 Hz)         plan(odom_pose, fused_pose, s_route)
+    First: nothing within route_clear_m of the route ahead and the robot on it -> the plan is just the route
+    (the usual case, ~1 ms). Otherwise a search on a 10 cm grid pooled from the 5 cm map (4x fewer cells);
+    obstacle distances, smoothing and clearance checks stay at 5 cm. Distance transforms use OpenCV if present.
     cost = 1 + inflation (lethal inside lethal_m of an obstacle, quadratic out to inflate_m)
-             + corridor (linear + quadratic in distance from the route, hard cap corridor_m)
+             + corridor (linear + 4th power in distance from the route, hard cap corridor_m)
              + kinematics (cells behind the robot or inside its 1 m turning circles: the search is
                holonomic, the robot can't reverse or pivot)
              + hysteresis beyond 1.5 m (keeps the side of an obstacle it chose, so it doesn't flip-flop)
     Goal: the best reachable point on the route 5-8.5 m ahead (prefers further along). The resulting path,
     in odom, is smoothed. No path inside the corridor -> blocked: stop and wait; still blocked after
     widen_after_s -> also try a 60 % wider corridor (a permanent barrier: go round it, over grass if need be).
-    Nothing within route_clear_m of the route ahead and the robot on it -> the plan is just the route.
 Per control tick        target(odom_pose, lookahead(base))  pure-pursuit target on the local path (odom);
                                                             shorter look-ahead when squeezing past things
                         speed_limit(v)                      slower near obstacles and on tight curves
@@ -39,6 +41,7 @@ import sys
 import threading
 import time
 from collections import deque
+from itertools import chain
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt
@@ -53,6 +56,10 @@ try:
     from skimage.graph import MCP_Geometric
 except ImportError:                                      # pip install scikit-image (aarch64 wheels exist)
     MCP_Geometric = None
+try:
+    import cv2                                           # already on the robot for the camera; ~8x faster EDT
+except ImportError:                                      # pragma: no cover
+    cv2 = None
 
 # chassis rectangle about the turning centre, m: x back..front, y right..left (450 x 595 mm frame)
 FOOTPRINT = (-0.30, 0.30, -0.23, 0.23)
@@ -62,13 +69,39 @@ def wrap(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
 
 
-def scan_polar(scan):
-    """Driver scan [(angle_deg, dist_mm, intensity)] -> (robot-frame angle rad, range m) of every return
-    beyond SELF_MM. The driver already drops no-return beams."""
-    arr = np.asarray(scan, dtype=np.float64).reshape(-1, 3)
+_RAYS = (None, None)                                     # (last scan, its rays): map, guard and back-up share it
+
+
+def scan_rays(scan):
+    """Driver scan [(angle_deg, dist_mm, intensity)] -> (range m, ux, uy: unit vector, robot frame) of every
+    return beyond SELF_MM. The driver already drops no-return beams. Remembers the last scan, because the map
+    update, the guard and the back-up check all ask for the same one (5 times per scan)."""
+    global _RAYS
+    last, out = _RAYS                                    # one read: safe against the planner thread
+    if last is scan:
+        return out
+    if isinstance(scan, np.ndarray):
+        arr = scan.reshape(-1, 3)
+    else:                                                # list of tuples: fromiter is 2x faster than asarray
+        arr = np.fromiter(chain.from_iterable(scan), np.float64, 3 * len(scan)).reshape(-1, 3)
     d = arr[:, 1] / 1000.0
     keep = d > SELF_MM / 1000.0
-    return np.radians(FRONT_DEG - arr[keep, 0]), d[keep]
+    ang = np.radians(FRONT_DEG - arr[keep, 0])
+    out = (d[keep], np.cos(ang), np.sin(ang))
+    _RAYS = (scan, out)
+    return out
+
+
+def edt(free, res):
+    """Distance (m) from every True cell to the nearest False one (exact Euclidean)."""
+    if cv2 is not None:
+        return cv2.distanceTransform(free.astype(np.uint8), cv2.DIST_L2, cv2.DIST_MASK_PRECISE) * np.float32(res)
+    return distance_transform_edt(free, sampling=res)
+
+
+def pool2(a, op):
+    """2 x 2 block reduce with a binary ufunc (a's sides must be even): the 10 cm search grid from the 5 cm map."""
+    return op(op(a[0::2, 0::2], a[1::2, 0::2]), op(a[0::2, 1::2], a[1::2, 1::2]))
 
 
 def resample(pts, step):
@@ -132,9 +165,8 @@ class RollingCostmap:
         self.L = np.zeros((self.n, self.n), np.float32)          # [row = y, col = x]
         self.x0 = self.y0 = None                                 # odom coords of cell (0, 0)'s corner
         self._hit = np.zeros(self.n * self.n, bool)
-        self._free = np.zeros(self.n * self.n, bool)
-        k = np.arange(int(max_free_m / (res * 0.7)) + 1)
-        self._t = (k + 0.5) * res * 0.7                          # ray sample spacing: 0.7 cell
+        self._free = np.zeros(self.n * self.n + 1, bool)         # last element: where off-grid samples go
+        self._k = np.arange(int(max_free_m / res) + 1, dtype=np.float32) + 0.5   # ray samples, in cells
         fx = np.arange(footprint[0], footprint[1] + 1e-9, res / 2)
         fy = np.arange(footprint[2], footprint[3] + 1e-9, res / 2)
         gx, gy = np.meshgrid(fx, fy)
@@ -180,14 +212,13 @@ class RollingCostmap:
     def update(self, scan, pose):
         x, y, h = pose
         self._recenter(x, y, h)
-        ang, d = scan_polar(scan)
+        d, ux, uy = scan_rays(scan)
         lx, ly = self.lidar_xy
-        px, py = lx + d * np.cos(ang), ly + d * np.sin(ang)          # robot frame
+        px, py = lx + d * ux, ly + d * uy                             # robot frame
         mine = self.self_mask(px, py)
         c, s = math.cos(h), math.sin(h)
         ox, oy = x + c * lx - s * ly, y + s * lx + c * ly             # LiDAR in odom
-        a = h + ang
-        ca, sa = np.cos(a), np.sin(a)
+        ca, sa = c * ux - s * uy, s * ux + c * uy                     # beam directions in odom
 
         hit, free = self._hit, self._free
         hit[:] = False
@@ -196,18 +227,23 @@ class RollingCostmap:
         r, cc, inside = self.cell(ox + d[ok] * ca[ok], oy + d[ok] * sa[ok])
         hit[r[inside] * self.n + cc[inside]] = True
 
-        flen = np.where(mine, 0.0, np.minimum(d - self.res, self.max_free))
-        ri, ki = np.nonzero(self._t[None, :] < flen[:, None])
-        t = self._t[ki]
-        r, cc, inside = self.cell(ox + ca[ri] * t, oy + sa[ri] * t)
-        free[r[inside] * self.n + cc[inside]] = True
+        # free space: every 3rd beam (0.5 deg apart: about a cell at 6 m), one sample per cell, all beams at
+        # once in grid units, each beam cut where it returns or leaves the grid; the rest land on a spare element
+        k, n = self._k, self.n
+        g0 = np.array([(ox - self.x0) / self.res, (oy - self.y0) / self.res])        # LiDAR, in cells
+        u = np.column_stack((ca[::3], sa[::3]))
+        with np.errstate(divide="ignore"):
+            edge = np.where(u > 0, (n - g0) / u, np.where(u < 0, -g0 / u, np.inf)).min(1) - 0.5
+        flen = np.minimum(np.where(mine, 0.0, np.minimum(d - self.res, self.max_free))[::3] / self.res, edge)
+        gc = np.float32(g0[0]) + u[:, 0].astype(np.float32)[:, None] * k
+        gr = np.float32(g0[1]) + u[:, 1].astype(np.float32)[:, None] * k
+        free[np.where(k < flen[:, None], gr.astype(np.int32) * n + gc.astype(np.int32), n * n).ravel()] = True
 
         L = self.L.reshape(-1)
-        pos = L > 0
-        L[pos] *= self.fade                                          # unconfirmed returns fade (~6 s)
-        L[free & ~hit] -= self.miss
-        L[hit] += self.hit
-        np.clip(L, self.l_min, self.l_max, out=L)
+        np.multiply(L, self.fade, out=L, where=L > 0)                 # unconfirmed returns fade (~6 s)
+        f = free[:-1] & ~hit
+        L[f] = np.maximum(L[f] - self.miss, self.l_min)
+        L[hit] = np.minimum(L[hit] + self.hit, self.l_max)
         self.clear_footprint(pose)
 
     def clear_footprint(self, pose):
@@ -223,9 +259,9 @@ class RollingCostmap:
 
 # ================================================================ planner
 class LocalNav:
-    def __init__(self, lethal_m=0.30, inflate_m=1.0, w_inflate=12.0, corridor_m=1.5, w_corridor=1.0,
+    def __init__(self, lethal_m=0.30, inflate_m=1.0, w_inflate=12.0, corridor_m=1.5, w_corridor=2.0,
                  w_corridor_lin=1.0, carrot_m=7.0, w_prev=0.4, prev_skip_m=1.5, route_clear_m=0.6,
-                 route_snap_m=0.35, unknown_cost=0.0, progress_bonus=1.2, replan_s=0.2,
+                 route_snap_m=0.35, progress_bonus=1.2, replan_s=0.2,
                  widen_after_s=8.0, widen=1.6, a_lat=0.5, clear_slow=(0.35, 0.90), v_min_scale=0.35,
                  min_radius=1.0, w_kin=20.0, use_mcp=True, **map_kw):
         self.map = RollingCostmap(**map_kw)
@@ -233,7 +269,7 @@ class LocalNav:
         self.corridor, self.w_corridor, self.carrot = corridor_m, w_corridor, carrot_m
         self.w_corridor_lin, self.prev_skip, self.route_clear, self.route_snap = \
             w_corridor_lin, prev_skip_m, route_clear_m, route_snap_m
-        self.w_prev, self.unknown_cost, self.bonus = w_prev, unknown_cost, progress_bonus
+        self.w_prev, self.bonus = w_prev, progress_bonus
         self.widen_after, self.widen = widen_after_s, widen
         self.min_radius, self.w_kin = min_radius, w_kin
         self.blocked_since = None                                # blocked this long -> try a wider corridor
@@ -295,7 +331,7 @@ class LocalNav:
         return res
 
     def _route_window(self, odom_pose, fused_pose, s_route):
-        lo, hi = s_route - 3.0, s_route + self.carrot + 2.0
+        lo, hi = s_route - 1.0, s_route + self.carrot + 2.0                # nothing is planned behind it
         m = (self.route_s >= lo) & (self.route_s <= hi)
         if m.sum() < 2:
             m = np.zeros_like(m)
@@ -314,139 +350,147 @@ class LocalNav:
             return {"ok": False, "why": "no route or no scans yet", "v_scale": 0.0}
         rpts, rs = self._route_window(odom_pose, fused_pose, s_route)
         x, y, h = odom_pose
-        end_s = self.route_s[-1]
         for cap in ((self.corridor, self.corridor * self.widen) if wide else (self.corridor,)):
-            # ---- crop: route window + robot, padded by the corridor and the inflation
-            pad = cap + self.inflate + 0.2
-            bx0 = min(rpts[:, 0].min(), x) - pad
-            bx1 = max(rpts[:, 0].max(), x) + pad
-            by0 = min(rpts[:, 1].min(), y) - pad
-            by1 = max(rpts[:, 1].max(), y) + pad
-            c0 = max(0, int((bx0 - M.x0) / res)); c1 = min(M.n, int((bx1 - M.x0) / res) + 1)
-            r0 = max(0, int((by0 - M.y0) / res)); r1 = min(M.n, int((by1 - M.y0) / res) + 1)
-            if c1 - c0 < 4 or r1 - r0 < 4:
+            box = self._crop(rpts, x, y, cap)
+            if box is None:
                 return {"ok": False, "why": "route is outside the map", "v_scale": 0.0}
-            Lc = M.L[r0:r1, c0:c1]
-            occ = Lc > M.occ
-            d_obs = distance_transform_edt(~occ, sampling=res) if occ.any() else np.full(occ.shape, 99.0)
-            # route corridor
-            dense, _ = resample(rpts, res / 2)
-            rr, rc, ok = M.cell(dense[:, 0], dense[:, 1])
-            rr, rc = rr - r0, rc - c0
-            ok &= (rr >= 0) & (rr < r1 - r0) & (rc >= 0) & (rc < c1 - c0)
-            on = np.zeros(occ.shape, bool)
-            on[rr[ok], rc[ok]] = True
-            d_route = distance_transform_edt(~on, sampling=res) if on.any() else np.full(occ.shape, 99.0)
-            sr, sc, _ = M.cell(x, y)
-            sr, sc = int(sr) - r0, int(sc) - c0
-            if not (0 <= sr < r1 - r0 and 0 <= sc < c1 - c0):
-                return {"ok": False, "why": "robot is outside the map", "v_scale": 0.0}
-            # ---- nothing near the route and the robot is on it: just follow the route (no planner wiggle)
+            r0, r1, c0, c1 = box
+            occ = M.L[r0:r1, c0:c1] > M.occ
+            d_obs = edt(~occ, res) if occ.any() else np.full(occ.shape, 99.0, np.float32)
             if cap == self.corridor:
-                q0, dq = project(rpts, rs, x, y)
-                ahead = (rs >= q0 - 0.2) & (rs <= min(q0 + self.carrot + 1.0, end_s))
-                dr_, dc_, dok = M.cell(rpts[ahead, 0], rpts[ahead, 1])
-                dr_, dc_ = dr_ - r0, dc_ - c0
-                dok &= (dr_ >= 0) & (dr_ < r1 - r0) & (dc_ >= 0) & (dc_ < c1 - c0)
-                if dq <= self.route_snap and dok.size and dok.all() and d_obs[dr_, dc_].min() > self.route_clear:
-                    m = rs >= q0
-                    path, ps = resample(np.vstack(([[*at_extended(rpts, rs, q0)]], rpts[m])), 0.1)
-                    v_scale, clear, kmax = self._speed(path, ps, d_obs, r0, c0)
-                    return {"ok": True, "why": "", "path": path, "path_s": ps, "goal_s": float(rs[m][-1]),
-                            "v_scale": v_scale, "clearance": clear, "kappa": kmax, "deviation": dq, "cap": cap,
-                            "on_route": True, "crop": (r0, r1, c0, c1)}
-            cap_eff = max(cap, d_route[sr, sc] + 0.5)              # always allowed to come back
-            # corridor: linear near the route (so the plan pulls back onto it), quadratic further out
-            cost = 1.0 + self.w_corridor_lin * d_route + self.w_corridor * (d_route / cap) ** 2
-            soft = np.clip((self.inflate - d_obs) / (self.inflate - self.lethal), 0.0, 1.0)
-            cost += self.w_inflate * soft * soft
-            if self.unknown_cost:
-                cost += self.unknown_cost * (Lc == 0)
-            if self.w_prev and self.path is not None and len(self.path) >= 2:
-                # hysteresis only beyond prev_skip_m: it keeps the chosen side of an obstacle, but near the
-                # robot it would just copy the last plan and let the robot wander
-                pp, pps = self.path, self.path_s
-                q, _ = project(pp, pps, x, y)
-                pp = pp[pps >= q + self.prev_skip]
-                if len(pp) >= 2:
-                    pr, pc, pok = M.cell(*resample(pp, res / 2)[0].T)
-                    pr, pc = pr - r0, pc - c0
-                    pok &= (pr >= 0) & (pr < r1 - r0) & (pc >= 0) & (pc < c1 - c0)
-                    if pok.any():
-                        onp = np.zeros(occ.shape, bool)
-                        onp[pr[pok], pc[pok]] = True
-                        yy, xx = np.ogrid[:occ.shape[0], :occ.shape[1]]
-                        far = (yy - sr) ** 2 + (xx - sc) ** 2 > (self.prev_skip / res) ** 2
-                        cost += self.w_prev * far * np.minimum(distance_transform_edt(~onp, sampling=res), 0.6)
-            if self.w_kin:
-                # the grid search is holonomic, the robot isn't: no reversing, nothing tighter than min_radius.
-                # Make cells behind it and inside its two tightest turning circles expensive (not forbidden,
-                # so a dead end still gives a plan and the guard + back-up deal with it)
-                yy, xx = np.ogrid[:occ.shape[0], :occ.shape[1]]
-                dx, dy = (xx - sc) * res, (yy - sr) * res
-                fwd = dx * math.cos(h) + dy * math.sin(h)
-                lat = -dx * math.sin(h) + dy * math.cos(h)
-                R = self.min_radius
-                rear = (fwd < -0.1) & (dx * dx + dy * dy < 1.5 ** 2)
-                turn = ((lat - R) ** 2 + fwd ** 2 < (0.9 * R) ** 2) | ((lat + R) ** 2 + fwd ** 2 < (0.9 * R) ** 2)
-                cost += self.w_kin * (rear | turn)
-            cost[d_obs <= self.lethal] = np.inf
-            cost[d_route > cap_eff] = np.inf
-            # start: if inflation covers the robot, let it drive out (never through a real return)
-            if not np.isfinite(cost[sr, sc]):
-                yy, xx = np.ogrid[:occ.shape[0], :occ.shape[1]]
-                disk = (yy - sr) ** 2 + (xx - sc) ** 2 <= (self.lethal / res + 1) ** 2
-                esc = disk & ~np.isfinite(cost) & ~occ & (d_route <= cap_eff + 1.0)
-                cost[esc] = 1.0 + self.w_inflate + 5.0
-            if not np.isfinite(cost[sr, sc]):
-                return {"ok": False, "why": "robot is on an obstacle cell", "v_scale": 0.0}
-            # ---- goal candidates on the route 5-8.5 m ahead. Closer ones only when those are past the route's
-            # end or off the map: falling back to closer goals in front of a blockage just drives the robot up
-            # to it, where its 1 m turning radius can't get it out again.
-            for lo, hi, near in ((s_route + self.carrot - 2.0, s_route + self.carrot + 1.5, False),
-                                 (s_route + 1.0, s_route + self.carrot - 2.0, True)):
-                hi = min(hi, end_s)
-                if hi < lo and end_s > s_route:
-                    lo = hi = end_s
-                qs = np.unique(np.append(np.arange(lo, hi + 1e-9, 0.25), hi)) if hi >= lo else np.array([])
-                qs = qs[(qs >= rs[0]) & (qs <= rs[-1])]
-                if len(qs) == 0:
-                    continue
-                gx, gy = np.interp(qs, rs, rpts[:, 0]), np.interp(qs, rs, rpts[:, 1])
-                gr, gc, gok = M.cell(gx, gy)
-                gr, gc = gr - r0, gc - c0
-                gok &= (gr >= 0) & (gr < r1 - r0) & (gc >= 0) & (gc < c1 - c0)
-                on_map = gok.any()
-                gok[gok] &= np.isfinite(cost[gr[gok], gc[gok]])
-                if not gok.any():
-                    if on_map and not near:
-                        break                                       # far goals are on the map but blocked
-                    continue
-                cells = list(zip(gr[gok].tolist(), gc[gok].tolist()))
-                qok = qs[gok]
-                cum, trace = self._search(cost, (sr, sc), cells)
-                vals = np.array([cum[r, c] for r, c in cells])
-                if not np.isfinite(vals).any():
-                    if not near:
-                        break
-                    continue
-                score = vals * res - self.bonus * (qok - s_route)
-                score[~np.isfinite(vals)] = np.inf
-                j = int(score.argmin())
-                cells_path = trace(cells[j])
-                pr = np.array([p[0] for p in cells_path]) + r0
-                pc = np.array([p[1] for p in cells_path]) + c0
-                px, py = M.xy(pr, pc)
-                raw = np.column_stack((px, py))
-                raw[0] = (x, y)
-                path, ps = self._smooth(raw, d_obs, r0, c0)
-                v_scale, clear, kmax = self._speed(path, ps, d_obs, r0, c0)
-                dev = self._deviation(path, rpts)
-                return {"ok": True, "why": "" if cap == self.corridor else "corridor widened", "path": path,
-                        "path_s": ps, "goal_s": float(qok[j]), "v_scale": v_scale, "clearance": clear,
-                        "kappa": kmax, "deviation": dev, "cap": cap,
-                        "crop": (r0, r1, c0, c1)}
+                out = self._route_plan(rpts, rs, x, y, d_obs, r0, c0)   # cheap, and the usual case
+                if out is not None:
+                    return out
+            cost, start = self._costs(rpts, odom_pose, occ, d_obs, r0, c0, cap)
+            if isinstance(start, str):
+                return {"ok": False, "why": start, "v_scale": 0.0}
+            out = self._best_path(cost, start, rpts, rs, s_route, x, y, d_obs, r0, c0)
+            if out is not None:
+                out.update(why="" if cap == self.corridor else "corridor widened", cap=cap, crop=box)
+                return out
         return {"ok": False, "why": "path blocked", "v_scale": 0.0}
+
+    def _crop(self, rpts, x, y, cap):
+        """Map rows / cols around the route window and the robot, padded by the corridor and the inflation, with
+        even sides (for the 10 cm search grid). None if that is off the map."""
+        M, res, pad = self.map, self.map.res, cap + self.inflate + 0.2
+        c0 = max(0, int((min(rpts[:, 0].min(), x) - pad - M.x0) / res))
+        c1 = min(M.n, int((max(rpts[:, 0].max(), x) + pad - M.x0) / res) + 1)
+        r0 = max(0, int((min(rpts[:, 1].min(), y) - pad - M.y0) / res))
+        r1 = min(M.n, int((max(rpts[:, 1].max(), y) + pad - M.y0) / res) + 1)
+        c1, r1 = c1 - (c1 - c0) % 2, r1 - (r1 - r0) % 2
+        return (r0, r1, c0, c1) if c1 - c0 >= 4 and r1 - r0 >= 4 else None
+
+    def _cells(self, pts, r0, c0, shape, f=1):
+        """odom points -> (rows, cols) of those inside a crop at (r0, c0) of `shape` (f = 2: the 10 cm grid), and
+        which points those were."""
+        r, c, _ = self.map.cell(pts[:, 0], pts[:, 1])
+        r, c = (r - r0) // f, (c - c0) // f
+        ok = (r >= 0) & (r < shape[0]) & (c >= 0) & (c < shape[1])
+        return r[ok], c[ok], ok
+
+    def _route_plan(self, rpts, rs, x, y, d_obs, r0, c0):
+        """The route itself as the plan, if the robot is on it and nothing is within route_clear_m of it ahead
+        (no planner wiggle on a clear walk). None otherwise."""
+        q0, dq = project(rpts, rs, x, y)
+        ahead = (rs >= q0 - 0.2) & (rs <= min(q0 + self.carrot + 1.0, self.route_s[-1]))
+        r, c, ok = self._cells(rpts[ahead], r0, c0, d_obs.shape)
+        if dq > self.route_snap or not ok.size or not ok.all() or d_obs[r, c].min() <= self.route_clear:
+            return None
+        m = rs >= q0
+        path, ps = resample(np.vstack(([[*at_extended(rpts, rs, q0)]], rpts[m])), 0.1)
+        v_scale, clear, kmax = self._speed(path, ps, d_obs, r0, c0)
+        return {"ok": True, "why": "", "path": path, "path_s": ps, "goal_s": float(rs[m][-1]), "v_scale": v_scale,
+                "clearance": clear, "kappa": kmax, "deviation": dq, "cap": self.corridor, "on_route": True}
+
+    def _costs(self, rpts, pose, occ, d_obs, r0, c0, cap):
+        """Cost of each cell of the 10 cm search grid (inf = no-go) and the robot's cell in it (or why not).
+        No-go uses the mean of a 10 cm cell's four 5 cm obstacle distances (its centre's, within 3.5 cm), so every
+        gap of 0.7 m or more stays open. The inflation cost uses the best of the four, as a 5 cm path could pick
+        it: with the mean, a narrow gap looked ~20 % dearer and the search went round things instead."""
+        x, y, h = pose
+        g = 2 * self.map.res
+        d, d_best = pool2(d_obs, np.add) * 0.25, pool2(d_obs, np.maximum)
+        sr, sc, ok = self._cells(np.array([[x, y]]), r0, c0, d.shape, 2)
+        if not ok[0]:
+            return None, "robot is outside the map"
+        sr, sc = int(sr[0]), int(sc[0])
+        on = np.zeros(occ.shape, bool)                             # at 5 cm, like the obstacles: the corridor
+        rr, rc, _ = self._cells(resample(rpts, g / 4)[0], r0, c0, occ.shape)   # edge mustn't move outwards
+        on[rr, rc] = True
+        d_route = pool2(edt(~on, g / 2), np.add) * 0.25 if on.any() else np.full(d.shape, 99.0, np.float32)
+        cap_eff = max(cap, d_route[sr, sc] + 0.5)                  # always allowed to come back
+        # corridor: linear (so the plan pulls back onto the route) plus a term that is steep near the corridor's
+        # edge (~ the walk's edge) and flat past it (where the robot may be, after a detour): with a square,
+        # going round the bench beside a 1.0 m gap, on the grass, cost within 1 % of going through the gap
+        cost = 1.0 + self.w_corridor_lin * d_route + self.w_corridor * (np.minimum(d_route, cap) / cap) ** 4
+        soft = np.clip((self.inflate - d_best) / (self.inflate - self.lethal), 0.0, 1.0)
+        cost += self.w_inflate * soft * soft
+        yy, xx = np.ogrid[:d.shape[0], :d.shape[1]]
+        dx, dy = (xx - sc) * g, (yy - sr) * g
+        if self.w_prev and self.path is not None and len(self.path) >= 2:
+            # hysteresis only beyond prev_skip_m: it keeps the chosen side of an obstacle, but near the robot it
+            # would just copy the last plan and let the robot wander
+            q, _ = project(self.path, self.path_s, x, y)
+            pp = self.path[self.path_s >= q + self.prev_skip]
+            pr, pc, _ = self._cells(resample(pp, g / 2)[0], r0, c0, d.shape, 2) if len(pp) >= 2 else ([], [], 0)
+            if len(pr):
+                onp = np.zeros(d.shape, bool)
+                onp[pr, pc] = True
+                cost += self.w_prev * (dx * dx + dy * dy > self.prev_skip ** 2) * np.minimum(edt(~onp, g), 0.6)
+        if self.w_kin:
+            # the grid search is holonomic, the robot isn't: no reversing, nothing tighter than min_radius. Make
+            # cells behind it and inside its two tightest turning circles expensive (not forbidden, so a dead end
+            # still gives a plan and the guard + back-up deal with it)
+            fwd = dx * math.cos(h) + dy * math.sin(h)
+            lat = -dx * math.sin(h) + dy * math.cos(h)
+            R = self.min_radius
+            rear = (fwd < -0.1) & (dx * dx + dy * dy < 1.5 ** 2)
+            turn = ((lat - R) ** 2 + fwd ** 2 < (0.9 * R) ** 2) | ((lat + R) ** 2 + fwd ** 2 < (0.9 * R) ** 2)
+            cost += self.w_kin * (rear | turn)
+        cost[d <= self.lethal] = np.inf
+        cost[d_route > cap_eff] = np.inf
+        if not np.isfinite(cost[sr, sc]):            # inflation covers the robot: let it drive out, never through
+            esc = (dx * dx + dy * dy <= (self.lethal + g) ** 2) & ~np.isfinite(cost) & ~pool2(occ, np.logical_or)
+            cost[esc & (d_route <= cap_eff + 1.0)] = 1.0 + self.w_inflate + 5.0
+        return cost, (sr, sc) if np.isfinite(cost[sr, sc]) else "robot is on an obstacle cell"
+
+    def _best_path(self, cost, start, rpts, rs, s_route, x, y, d_obs, r0, c0):
+        """Cheapest path to the best goal on the route 5-8.5 m ahead (cost minus progress_bonus per metre along
+        the route), smoothed, or None if blocked. Closer goals only when those are past the route's end or off
+        the map: aiming short of a blockage just drives the robot up to it, where its 1 m turning radius can't
+        get it out again."""
+        g, end_s = 2 * self.map.res, self.route_s[-1]
+        for lo, hi, near in ((s_route + self.carrot - 2.0, s_route + self.carrot + 1.5, False),
+                             (s_route + 1.0, s_route + self.carrot - 2.0, True)):
+            hi = min(hi, end_s)
+            if hi < lo and end_s > s_route:
+                lo = hi = end_s
+            qs = np.unique(np.append(np.arange(lo, hi + 1e-9, 0.25), hi)) if hi >= lo else np.array([])
+            qs = qs[(qs >= rs[0]) & (qs <= rs[-1])]
+            pts = np.column_stack((np.interp(qs, rs, rpts[:, 0]), np.interp(qs, rs, rpts[:, 1])))
+            gr, gc, gok = self._cells(pts, r0, c0, cost.shape, 2)
+            fin = np.isfinite(cost[gr, gc])
+            if not fin.any():
+                if gok.any() and not near:
+                    return None                                     # far goals are on the map but blocked
+                continue
+            cells, qok = list(zip(gr[fin].tolist(), gc[fin].tolist())), qs[gok][fin]
+            cum, trace = self._search(cost, start, cells)
+            vals = np.array([cum[r, c] for r, c in cells])
+            if not np.isfinite(vals).any():
+                if not near:
+                    return None
+                continue
+            j = int(np.where(np.isfinite(vals), vals * g - self.bonus * (qok - s_route), np.inf).argmin())
+            cp = np.array(trace(cells[j]))
+            raw = np.column_stack(self.map.xy(r0 + 2 * cp[:, 0] + 0.5, c0 + 2 * cp[:, 1] + 0.5))
+            raw[0] = (x, y)
+            path, ps = self._smooth(raw, d_obs, r0, c0)
+            v_scale, clear, kmax = self._speed(path, ps, d_obs, r0, c0)
+            return {"ok": True, "path": path, "path_s": ps, "goal_s": float(qok[j]), "v_scale": v_scale,
+                    "clearance": clear, "kappa": kmax, "deviation": self._deviation(path, rpts)}
+        return None
 
     def _search(self, cost, start, ends):
         if self.use_mcp:
@@ -528,9 +572,9 @@ class LocalNav:
         nose-up to something and can't turn tighter than its minimum radius. Returns a reverse speed (m/s,
         negative) to drive both wheels at, or 0.0 to carry on normally. Stops backing after back_m or as
         soon as anything is within rear_m behind the chassis."""
-        ang, d = scan_polar(scan)
+        d, ux, uy = scan_rays(scan)
         lx, ly = self.map.lidar_xy
-        px, py = lx + d * np.cos(ang), ly + d * np.sin(ang)
+        px, py = lx + d * ux, ly + d * uy
         keep = ~self.map.self_mask(px, py)
         back = self.map.fp[0]
         rear_clear = not ((px[keep] < back) & (px[keep] > back - rear_m) & (np.abs(py[keep]) < 0.30)).any()
@@ -549,9 +593,9 @@ class LocalNav:
         """(speed factor 0 / 0.5 / 1, reason). Looks along the planned path instead of a straight box,
         plus a short straight box for the distance the robot covers before a turn takes effect, plus a ring
         near_m around the chassis outline (returns inside the outline are the robot itself)."""
-        ang, d = scan_polar(scan)
+        d, ux, uy = scan_rays(scan)
         lx, ly = self.map.lidar_xy
-        px, py = lx + d * np.cos(ang), ly + d * np.sin(ang)
+        px, py = lx + d * ux, ly + d * uy
         keep = ~self.map.self_mask(px, py, pad=0.01) & (d < 8.0)
         px, py = px[keep], py[keep]
         if len(px) == 0:
@@ -584,15 +628,18 @@ class LocalNav:
         seg = path[m]
         if len(seg) < 2:
             return 1.0, ""
-        rp = np.vstack(([[0.0, 0.0]], to_robot(seg, odom_pose)))
-        rp, rs = resample(rp, 0.05)
-        near = (np.abs(px) < slow_m + 1.0) & (np.abs(py) < slow_m + 1.0)
+        rp = np.vstack(([[0.0, 0.0]], to_robot(seg, odom_pose)))   # the plan from the robot, robot frame
+        lo, hi = rp.min(0) - slow_w, rp.max(0) + slow_w
+        near = (px > lo[0]) & (px < hi[0]) & (py > lo[1]) & (py < hi[1])   # only returns that could be close
         if not near.any():
             return 1.0, ""
-        qx, qy = px[near], py[near]
-        dd = np.hypot(qx[:, None] - rp[None, :, 0], qy[:, None] - rp[None, :, 1])
-        j = dd.argmin(1)
-        dist, along = dd[np.arange(len(qx)), j], rs[j]
+        qx, qy = px[near][:, None], py[near][:, None]
+        a, ab = rp[:-1], np.diff(rp, axis=0)                           # distance to each segment of the plan
+        L = np.maximum(np.hypot(ab[:, 0], ab[:, 1]), 1e-9)
+        t = np.clip(((qx - a[:, 0]) * ab[:, 0] + (qy - a[:, 1]) * ab[:, 1]) / (L * L), 0.0, 1.0)
+        dd = np.hypot(qx - a[:, 0] - t * ab[:, 0], qy - a[:, 1] - t * ab[:, 1])
+        j, i = dd.argmin(1), np.arange(len(qx))
+        dist, along = dd[i, j], np.concatenate(([0.0], np.cumsum(L)))[j] + t[i, j] * L[j]
         front = self.map.fp[1]
         stop = (dist < stop_w) & (along < stop_m + front) & (along > 0.05)
         if stop.any():

@@ -18,11 +18,12 @@ measured turning lag, a simulated STL27L and campus-like obstacles. Numbers are 
 
 ## On the Pi, in this order
 
-1. **Install scikit-image** (the fast search; without it a pure-Python search is used, ~5× slower):
+1. **Install scikit-image** (the fast search; without it a pure-Python search is used, ~2.5× slower):
    `.venv/bin/pip install scikit-image` (aarch64 wheels exist for Python 3.13).
 2. **Benchmark**: `.venv/bin/python nav/local_nav.py`. It prints map-update and plan times on the BHEE scans.
    Budget: a map update every 100 ms and a plan every 200 ms, in their own thread. Here (2.1 GHz Xeon) they took
-   ~5-7 ms and ~8 ms; expect 2-3× that on the Pi 5. Anything under ~40 ms per plan is fine.
+   ~0.7 ms and ~2 ms; expect 2-3× that on the Pi 5. Anything under ~40 ms per plan is fine. OpenCV (already
+   installed for the camera) makes the distance transforms ~3.5× faster; without it scipy is used.
 3. **Self-returns**: with the robot standing in the open, check nothing of the robot shows up within 5 cm of
    the chassis outline (`FOOTPRINT` in local_nav.py, 600 × 460 mm about the turning centre). The guard stops for
    anything in that ring. The BHEE scans have nothing there; the intermittent 0.18 m return at +52 deg falls
@@ -68,17 +69,32 @@ never moves the obstacles relative to the robot. (In the sim, a 0.8 m GPS jump m
 
 **Map** (every scan, ~10 Hz): 16 m × 16 m at 5 cm, centred 3 m ahead of the robot, re-centred by whole-cell
 shifts.
-- Each scan does a log-odds update: +0.85 at each return, −0.4 along each beam (up to 6 m), clamped to [−2, 2].
+- Each scan does a log-odds update: +0.85 at each return, −0.4 along every third beam (0.5° apart, about a cell
+  at 6 m; up to 6 m), clamped to [−2, 2].
 - The robot's own footprint is forced free. Positive cells fade 3 % per scan.
 - No-return beams don't clear anything, because the driver drops them.
 - Unknown cells cost nothing extra. Open areas are mostly unknown, since grass and sky return nothing; an
   unknown-cost made it hug the few seen-free cells.
 
-**Plan** (every 0.2 s): Dijkstra over the grid (scikit-image `MCP_Geometric`, 8-connected) from the robot to
-candidate goals on the route 5-8.5 m ahead, inside a crop around the route window. The cost per cell is:
+**Plan** (every 0.2 s): first the cheap check below (the route itself, when it's clear). Otherwise Dijkstra
+(scikit-image `MCP_Geometric`, 8-connected) from the robot to candidate goals on the route 5-8.5 m ahead,
+inside a crop around the route window. The search runs on a **10 cm grid pooled from the 5 cm map** (4× fewer
+cells):
+- A 10 cm cell is no-go if the mean of its four obstacle distances (its centre's, within 3.5 cm) is ≤ 0.30 m,
+  so every gap of 0.7 m or more stays open.
+- Its inflation cost uses the best of the four, as a 5 cm path could.
+- Obstacle and corridor distances, smoothing and the clearance checks stay at 5 cm.
+- Distance transforms use OpenCV when it's installed (exact; it's on the robot for the camera), and scipy
+  otherwise.
+
+The cost per cell is:
 - 1, plus
 - inflation: infinite within 0.30 m of a return, then quadratic to 1.0 m (weight 12), plus
-- corridor: distance to the route, linear + quadratic, infinite beyond 1.5 m, plus
+- corridor: distance d to the route, linear + 2·(min(d, cap)/cap)⁴, infinite beyond the cap (1.5 m), plus.
+  - The second term is steep near the edge, which is roughly the walk's edge, and flat past it, where the robot
+    may be after a detour.
+  - Why the 4th power: with a square, going round the bench beside a 1.0 m gap (on the grass) cost within 1 % of
+    going through the gap, so either could win.
 - kinematics: +20 behind the robot and inside its two 1 m turning circles (the search is holonomic; the robot
   can't reverse or pivot), plus
 - hysteresis: +0.4 per metre away from the previous plan, but only beyond 1.5 m, so it keeps the side it chose.
@@ -121,44 +137,92 @@ Each cell gives the result, then the closest the chassis rectangle came to anyth
 | scenario | today 0.3 | taped 0.3 | taped 0.6 | casters 0.3 | casters 0.6 | casters 0.8 |
 |---|---|---|---|---|---|---|
 | Clear walk | through, nothing near, 156 s | through, nothing near, 123 s | through, nothing near, 63 s | through, nothing near, 123 s | through, nothing near, 62 s | through, nothing near, 47 s |
-| Bin on the route | **stuck**, 0.47 m, 224 s | through, 0.43 m, 127 s | through, 0.49 m, 64 s | through, 0.43 m, 127 s | through, 0.45 m, 64 s | through, 0.46 m, 49 s |
-| Bike rack + parked bikes | **stuck**, 0.47 m, 224 s | through, 0.42 m, 126 s | through, 0.49 m, 64 s | through, 0.47 m, 126 s | through, 0.50 m, 63 s | through, 0.52 m, 48 s |
-| Gap 1.0 m | **stuck**, 0.29 m, 224 s | through, 0.21 m, 143 s | through, 0.23 m, 80 s | through, 0.24 m, 143 s | through, 0.25 m, 79 s | through, 0.24 m, 59 s |
-| Gap 0.75 m | **stuck**, 0.47 m, 224 s | through, 0.08 m, 156 s | through, 0.10 m, 90 s | through, 0.10 m, 143 s | through, 0.10 m, 89 s | through, 0.11 m, 75 s |
-| Group across the walk | through, 2.41 m, 156 s | through, 2.16 m, 132 s | through, 2.34 m, 73 s | through, 2.16 m, 132 s | through, 2.32 m, 71 s | through, 2.50 m, 56 s |
-| Barrier | **stuck**, 0.45 m, 224 s | through, 0.9 m onto grass, 0.31 m, 145 s | through, 0.9 m onto grass, 0.32 m, 80 s | through, 0.9 m onto grass, 0.31 m, 145 s | through, 0.9 m onto grass, 0.32 m, 79 s | through, 0.9 m onto grass, 0.30 m, 62 s |
-| Oncoming person | **stuck**, 0.22 m, 224 s | through, 0.21 m, 127 s | through, 0.17 m, 66 s | through, 0.22 m, 127 s | through, 0.24 m, 65 s | walked into*, -0.29 m, 51 s |
-| Crossing person | through, nothing near, 156 s | through, 1.16 m, 125 s | through, 1.31 m, 64 s | through, 1.16 m, 124 s | through, 1.23 m, 63 s | through, 1.25 m, 48 s |
-| Route 0.9 m off | **stuck**, 0.23 m, 224 s | through, 1.3 m onto grass, 0.51 m, 133 s | through, 1.3 m onto grass, 0.45 m, 68 s | through, 1.3 m onto grass, 0.52 m, 133 s | through, 1.3 m onto grass, 0.50 m, 67 s | through, 1.3 m onto grass, 0.52 m, 51 s |
-| GPS jump | **stuck**, 0.44 m, 224 s | through, 0.46 m, 127 s | through, 0.43 m, 65 s | through, 0.45 m, 127 s | through, 0.48 m, 64 s | through, 0.49 m, 48 s |
-| Corner + obstacles | **stuck**, 0.48 m, 224 s | through, 0.33 m, 134 s | through, 0.37 m, 70 s | through, 0.33 m, 134 s | through, 0.37 m, 71 s | through, 0.38 m, 53 s |
-| Campus mix, 64 m | **stuck**, 0.46 m, 383 s | through, 0.1 m onto grass, 0.23 m, 257 s | through, 0.3 m onto grass, 0.24 m, 137 s | through, 0.1 m onto grass, 0.25 m, 258 s | through, 0.26 m, 141 s | through, 0.2 m onto grass, 0.26 m, 107 s |
+| Bin on the route | **stuck**, 0.47 m, 224 s | through, 0.40 m, 129 s | through, 0.43 m, 65 s | through, 0.41 m, 128 s | through, 0.42 m, 65 s | through, 0.43 m, 49 s |
+| Bike rack + parked bikes | **stuck**, 0.47 m, 224 s | through, 0.38 m, 128 s | through, 0.42 m, 65 s | through, 0.43 m, 128 s | through, 0.47 m, 64 s | through, 0.49 m, 48 s |
+| Gap 1.0 m | **stuck**, 0.29 m, 224 s | through, 0.22 m, 143 s | through, 0.24 m, 80 s | through, 0.24 m, 143 s | through, 0.25 m, 79 s | through, 0.25 m, 59 s |
+| Gap 0.75 m | **stuck**, 0.47 m, 224 s | through, 0.08 m, 147 s | through, 0.09 m, 93 s | through, 0.10 m, 146 s | through, 0.11 m, 90 s | through, 0.12 m, 75 s |
+| Group across the walk | through, 2.41 m, 156 s | through, 2.18 m, 133 s | through, 2.27 m, 72 s | through, 2.25 m, 132 s | through, 2.16 m, 71 s | through, 2.66 m, 57 s |
+| Barrier | **stuck**, 0.45 m, 224 s | through, 0.9 m onto grass, 0.29 m, 147 s | through, 0.9 m onto grass, 0.28 m, 80 s | through, 0.9 m onto grass, 0.28 m, 147 s | through, 0.9 m onto grass, 0.32 m, 79 s | through, 0.9 m onto grass, 0.30 m, 62 s |
+| Oncoming person | **stuck**, 0.22 m, 224 s | through, 0.21 m, 129 s | through, 0.14 m, 68 s | through, 0.23 m, 129 s | through, 0.24 m, 66 s | walked into*, -0.27 m, 50 s |
+| Crossing person | through, nothing near, 156 s | through, 1.16 m, 125 s | through, 1.34 m, 65 s | through, 1.17 m, 125 s | through, 1.23 m, 63 s | through, 1.27 m, 49 s |
+| Route 0.9 m off | **stuck**, 0.23 m, 224 s | through, 1.2 m onto grass, 0.44 m, 139 s | through, 1.3 m onto grass, 0.53 m, 71 s | through, 1.2 m onto grass, 0.45 m, 139 s | through, 1.2 m onto grass, 0.48 m, 70 s | through, 1.3 m onto grass, 0.47 m, 53 s |
+| GPS jump | **stuck**, 0.44 m, 224 s | through, 0.41 m, 128 s | through, 0.46 m, 65 s | through, 0.42 m, 128 s | through, 0.46 m, 64 s | through, 0.49 m, 48 s |
+| Corner + obstacles | **stuck**, 0.48 m, 224 s | through, 0.35 m, 135 s | through, 0.38 m, 70 s | through, 0.34 m, 136 s | through, 0.38 m, 72 s | through, 0.37 m, 52 s |
+| Campus mix, 64 m | **stuck**, 0.46 m, 383 s | through, 0.24 m, 265 s | through, 0.1 m onto grass, 0.23 m, 142 s | through, 0.25 m, 264 s | through, 0.25 m, 142 s | through, 0.26 m, 108 s |
 
 With `--avoid`, all 65 of 65 runs arrived, and none drove into anything. The exceptions:
 
-- \* One run had contact: oncoming person, casters, 0.8 m/s. The simulated person never yields; they walked into the robot after it had stopped (0.11 m/s at first touch).
+- \* One run had contact: oncoming person, casters, 0.8 m/s. The simulated person never yields; they walked into the robot after it had stopped (0.14 m/s at first touch).
 - Barrier: it went 0.9 m onto grass, because that is the only way round. It does this only after 8 s blocked (`--widen-after`).
-- Route 0.9 m off: it went 1.3 m onto grass (see the risks below).
-- Campus mix: at its 90° turns the chassis corner overhangs the walk edge by 0.1-0.26 m.
+- Route 0.9 m off: it went 1.2-1.3 m onto grass (see the risks below).
+- Campus mix: at its 90° turns the chassis corner overhangs the walk edge by up to 0.11 m.
 
 Today's follow.py got stuck in front of 10 of the 13 scenarios. On the clear walk it took 156 s against 123 s: the old guard's "anything within 0.25 m" check keeps firing on the intermittent self-return.
 
-GPS jump: with the costmap in the GPS frame instead, it also got past (0.39-0.44 m, against 0.43-0.49 m). So a single jump shows only a small benefit. The odom frame is there for the metre-scale RTK float wandering seen near buildings on 7 Nov, which the simulator doesn't model.
+GPS jump: with the costmap in the GPS frame instead, it also got past (0.38-0.46 m, against 0.46 m). So a single jump shows only a small benefit. The odom frame is there for the metre-scale RTK float wandering seen near buildings on 7 Nov, which the simulator doesn't model.
 
-**Timing** on a 2.1 GHz Xeon core, over 29,349 plans:
+**Timing** on a 2.1 GHz Xeon core, over 29,680 plans:
 
-- Map update: median 4.7 ms, worst run's 95th percentile 18 ms.
-- Plan: median 3.0 ms (mostly the route-is-clear shortcut). A full search takes 6-12 ms. The worst run's 95th percentile was 34 ms, and the single slowest plan 99 ms.
+- Map update: median 0.6 ms, worst run's 95th percentile 1.2 ms.
+- Plan: median 0.6 ms (mostly the route-is-clear check). A full search takes 1.5-3 ms. The worst run's 95th
+  percentile was 5.5 ms, and the single slowest plan 19 ms.
+- Before the speed-up (8 Nov) these were 4.7 / 18 ms and 3.0 / 34 / 99 ms. See **Speed** below.
 
 Expect 2-3× on a Pi 5. The budget is 100 ms per update and 200 ms per plan, in their own thread.
 
 **The real follow.py** (`sim_follow_harness.py`, real time, final code):
 
-- Bin, casters 0.6 m/s, `--avoid`: arrived in 31 s, closest 0.43 m. Loop ticks median 50 ms, worst 54 ms.
-- Bike rack, taped 0.6 m/s, `--avoid`: arrived in 52 s, closest 0.48 m, worst tick 52 ms.
+- Bin, casters 0.6 m/s, `--avoid`: arrived in 31 s, closest 0.42 m. Loop ticks median 50 ms, worst 50 ms.
+- Bike rack, taped 0.6 m/s, `--avoid`: arrived in 53 s, closest 0.55 m, worst tick 50 ms.
 - Bin, today (no `--avoid`): time limit, stopped 0.47 m from the bin.
 
-**Real scans**: on the five BHEE-entrance scans in `scan_here.json`, a route through the racks makes it bend 1.5 m round them with 0.84 m clearance.
+**Real scans**: on the five BHEE-entrance scans in `scan_here.json`, a route through the racks makes it bend 1.4 m round them with 0.71 m clearance.
+
+## Speed
+
+The planner was profiled and sped up on 8 Nov, using a replay of every planner call from five simulated runs:
+35k calls over 4,775 scans, interleaved with the original. A *cycle* is one LiDAR period (100 ms): one map update,
+about half a plan, two guard checks, two back-up checks and two path look-ups.
+
+| | before | after | |
+|---|---|---|---|
+| cycle mean | 6.6-7.8 ms | 1.55-1.70 ms | **4.6×** (4.0-4.9× per paired run) |
+| cycle 99th percentile | 17.7-22.2 ms | 5.7-6.3 ms | **3.5×** (2.8-3.9×) |
+| map update mean | 3.4-4.3 ms | 0.63-0.70 ms | ~6× |
+| plan mean / 99th percentile | 4.4-4.9 / 15-18 ms | 1.5 / 5.2-5.6 ms | ~3× |
+| guard / back-up check | 0.42 / 0.21 ms | 0.09 / 0.017 ms | 4.5× / 12× |
+
+What changed:
+
+1. **Free-space raycast.** Every third beam, one sample per cell, all beams at once, each cut where it returns or
+   leaves the grid. It was sampling every beam every 3.5 cm and then running `nonzero`.
+2. **Scan conversion.** Done once per scan with `fromiter` and shared by the map, guard and back-up. It used to be
+   converted five times per scan.
+3. **Plan order.** The route-is-clear check runs right after the obstacle distance transform, before any cost
+   grid is built.
+4. **10 cm search grid.** The search runs on a grid pooled from the 5 cm map. No-go uses the mean distance, so
+   gaps of 0.7 m or more stay open; the inflation cost uses the best sub-cell. Obstacle and corridor distances,
+   smoothing and clearance checks stay at 5 cm.
+5. **OpenCV distance transforms** (exact) when installed.
+6. **Guard.** Exact distance to the plan's segments, for returns in the plan's bounding box only.
+7. **Route window.** It starts 1 m behind the robot, not 3 m.
+
+Results:
+
+- **Complexity:** average cyclomatic complexity (radon) went 4.14 → 3.74. Splitting `_plan` (39) into small
+  helpers did that; the worst function is now 12. SLOC went 591 → 611.
+- **Decisions on identical inputs:** go/blocked and route-is-clear agree on all 2,145 plans, and guard speed
+  decisions on 99.97 % of 9,543. In the five that differ, the new guard slows slightly earlier.
+- **Closed loop:** all 67 runs with `--avoid` have the same outcome and no robot-caused contacts. Closest
+  approaches are within ±7 cm and finish times within ±5 %.
+
+One cost changed on purpose. The corridor term went from (d/1.5)² to 2·(min(d, 1.5)/1.5)⁴: steep near the edge,
+flat past it.
+- In the original, going round the bench beside the 1.0 m gap (onto grass) cost within 1.2 % of going through
+  the gap. The faster grid tipped it, and at 0.3 m/s the robot went 0.7 m onto grass.
+- With the new term the margin is 7-9 % on both grids, and it goes through the gap.
+- Side effect: at the 90° corners of the campus run, the chassis now overhangs the walk by up to 0.11 m instead
+  of 0.26 m.
 
 ## What the simulation changed
 
