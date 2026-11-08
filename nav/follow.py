@@ -22,6 +22,11 @@ How it works:
   stop if anything is in the corridor ahead (|y| < --half-width) within --stop-m; half speed within --slow-m;
   stop if anything at all is within --near-m; stop if the LiDAR goes quiet. It resumes on its own once clear.
 - Also stops on: button released, GPS fix lost or older than 1 s, motor fault, ~/motor_cal/STOP, --max-s.
+- --avoid (local_nav.py): a rolling LiDAR costmap and a grid planner bend the route around obstacles (bins, bike
+  racks, people) inside a --corridor either side of it; pure pursuit then follows that local path, the guard
+  watches the planned path instead of a straight box, and the robot stops and waits if the way is blocked
+  (after --widen-after s it may also go wider). The map lives in a wheels + gyro "odom" frame that GPS never
+  moves; each plan maps the route into it. Simulated first: nav/sim_local_nav.py, nav/LOCAL_NAV.md.
 Every tick is logged to nav/logs/follow_<time>.json and the track is drawn on the map at the end.
 Onboard video: the robot's USB camera records from the first button press to the end of the run, with the run
 status drawn on each frame, saved as nav/logs/follow_<mode>_<time>.mp4 (H.264, plays on phones). --no-video skips it.
@@ -43,6 +48,7 @@ sys.path.insert(0, os.path.join(REPO, "motor_cal"))
 import ntrip_rtk                      # noqa: E402
 import robot_drive as rd              # noqa: E402
 from lidar_odom import scan_to_points  # noqa: E402
+import local_nav as ln                # noqa: E402
 
 TRACK_EFF = 0.95                       # m, effective skid-steer track on tile (motor_cal turn maps)
 RTK = ("4", "5")                       # GGA fix qualities trusted for heading (RTK fixed / float)
@@ -342,6 +348,18 @@ def lidar_check(lid, a):
     return 1.0, ""
 
 
+def nav_status(nav, back):
+    r = nav.result
+    if back < 0:
+        return "backing up (nose-up to something)"
+    if not r.get("ok"):
+        return f"<b>{r.get('why') or 'no plan yet'}</b>"
+    if r.get("on_route"):
+        return f"on the route, {r.get('ms', 0):.0f} ms"
+    return (f"bending {r.get('deviation', 0):.1f} m round something, clearance {r.get('clearance', 0):.2f} m"
+            f"{' (wider corridor)' if r.get('why') else ''}, {r.get('ms', 0):.0f} ms")
+
+
 # ---------------------------------------------------------------- main loop
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -374,6 +392,17 @@ def main():
     ap.add_argument("--tele-turn", type=float, default=1.0, help="joystick full turn, rad/s (spinning in place allowed)")
     ap.add_argument("--video-rotate", type=int, choices=(0, 90, 180, 270), default=180,
                     help="rotate the onboard video (default 180: the camera is mounted upside down)")
+    ap.add_argument("--avoid", action="store_true",
+                    help="bend the route around obstacles: LiDAR costmap + grid planner (local_nav.py)")
+    ap.add_argument("--corridor", type=float, default=1.5,
+                    help="--avoid: furthest the robot may leave the route, m. The LiDAR can't see grass, so this "
+                         "is what keeps it on the sidewalk: about half the walk's width")
+    ap.add_argument("--widen-after", type=float, default=8.0,
+                    help="--avoid: blocked this long (s) -> also try a 60%% wider corridor (0 = never)")
+    ap.add_argument("--no-backup", action="store_true",
+                    help="--avoid: never back up when the guard holds it nose-up to something")
+    ap.add_argument("--log-scans", action="store_true",
+                    help="--avoid: save every LiDAR scan with its poses (logs/..._scans.npz) for offline replay")
     ap.add_argument("--no-gps", action="store_true",
                     help="line: no GPS at all. The line runs straight ahead from where the robot points at the start, "
                          "followed by wheels + gyro (tests the controller on its own)")
@@ -470,6 +499,17 @@ def main():
             route = Path([(0.0, 0.0), (a.length, 0.0)])
             print(f"no GPS: following a {a.length:.1f} m line straight ahead of the start, by wheels + gyro", flush=True)
     log, reason = [], None
+    nav = navt = None
+    if a.avoid:
+        if a.mode == "teleop":
+            mcu.close(); sys.exit("--avoid needs a path to follow (line, route or local)")
+        nav = ln.LocalNav(corridor_m=a.corridor, widen_after_s=a.widen_after)
+        S["odom"] = (0.0, 0.0)
+        navt = ln.NavThread(nav, lid, lambda: S.get("nav_poses"), log=a.log_scans)
+        navt.start()
+        print(f"obstacle avoidance on: up to {a.corridor:g} m either side of the route, search by "
+              f"{'scikit-image' if ln.MCP_Geometric else 'pure Python (slow: pip install scikit-image)'}", flush=True)
+    back = 0.0
     t_start = time.monotonic()
     nxt = t_start
     try:
@@ -535,6 +575,11 @@ def main():
             if S.get("fused") is not None and head is not None:
                 fx, fy = S["fused"]
                 S["fused"] = (fx + v_odo * dt * math.cos(head), fy + v_odo * dt * math.sin(head))
+            if nav is not None:                                      # odom: wheels + gyro only, GPS never moves it
+                ox, oy = S["odom"]
+                S["odom"] = (ox + v_odo * dt * math.cos(imu.yaw), oy + v_odo * dt * math.sin(imu.yaw))
+                if S["phase"] != "follow":
+                    S["nav_poses"] = ((*S["odom"], imu.yaw), None, None)   # map only, nothing to plan yet
             if not a.no_gps and S["pos"] is not None and S["pos_t"] == now and fix:
                 if S.get("fused") is None or head is None:
                     S["fused"] = S["pos"]                             # until the heading is known: raw GPS
@@ -555,7 +600,10 @@ def main():
 
             # ---- stop conditions
             held = now - st["hold_t"] < 0.6
-            lid_k, lid_why = lidar_check(lid, a)
+            if nav is not None and S["phase"] == "follow" and now - lid.t <= 0.5:
+                lid_k, lid_why = nav.guard(lid.scan, (*S["odom"], imu.yaw), S.get("v_cmd", 0.0))  # along the plan
+            else:
+                lid_k, lid_why = lidar_check(lid, a)
             why = None
             if os.path.exists(rd.STOP_FILE):
                 why = "STOP file"
@@ -630,10 +678,27 @@ def main():
                 if S["s"] >= route.length - 0.3:
                     reason = "arrived"
                     break
-                tx, ty = route.at_extended(S["s"] + a.lookahead)
-                alpha = wrap(math.atan2(ty - y, tx - x) - head)
-                Ld = math.hypot(tx - x, ty - y) or a.lookahead
                 v = a.speed * min(1.0, (route.length - S["s"]) / 1.0 + 0.3)
+                if nav is None:
+                    tx, ty = route.at_extended(S["s"] + a.lookahead)
+                    alpha = wrap(math.atan2(ty - y, tx - x) - head)
+                    Ld = math.hypot(tx - x, ty - y) or a.lookahead
+                else:                                                  # follow the local plan, in odom
+                    if S.get("nav_route") is not route:
+                        nav.set_route(route.p)
+                        S["nav_route"] = route
+                    op = (*S["odom"], imu.yaw)
+                    S["nav_poses"] = (op, (x, y, head), S["s"])
+                    nr = nav.result
+                    tgt = nav.target(op, nav.lookahead(a.lookahead)) if nr.get("ok") else None
+                    if tgt is None:
+                        pause = pause or f"path blocked: {nr.get('why') or 'no plan yet'}"
+                        alpha, Ld, v = 0.0, a.lookahead, 0.0
+                    else:
+                        tx, ty = tgt
+                        alpha = wrap(math.atan2(ty - op[1], tx - op[0]) - op[2])
+                        Ld = math.hypot(tx - op[0], ty - op[1]) or a.lookahead
+                        v = nav.speed_limit(v)                         # clearance + curvature
                 k = 2 * math.sin(alpha) / Ld                             # pure pursuit curvature
                 k = max(-1 / a.min_radius, min(1 / a.min_radius, k))    # no tighter than min_radius: no pivots
                 w = v * k
@@ -655,12 +720,25 @@ def main():
                 lo = a.inner_min * max(vl, vr)                           # inner wheel keeps rolling forward
                 vl, vr = max(vl, lo), max(vr, lo)
             S["v_cmd"] = v
+            back = 0.0
+            if nav is not None and S["phase"] == "follow" and not a.no_backup:
+                if manual or (pause is not None and pause != lid_why):
+                    nav.cancel_recovery()                              # never back up unless only the guard holds it
+                    S["held_s"] = 0.0
+                else:
+                    S["held_s"] = S.get("held_s", 0.0) + 0.05 if (lid_k == 0.0 and nav.result.get("ok")) else 0.0
+                    back = nav.recovery(lid.scan, (*S["odom"], imu.yaw), S["held_s"])
+                    if back < 0:
+                        S["held_s"] = 0.0
+                        S["i"] = 0.0
             if manual:
                 tv, tw = tele[0] * a.tele_speed, tele[1] * a.tele_turn
                 if tv > 0 and lid_k == 0.0:                               # LiDAR blocks driving forward into things
                     tv = 0.0
                 mvl, mvr = tv - tw * TRACK_EFF / 2, tv + tw * TRACK_EFF / 2
                 mcu.drive(rd.rpm_for(mvl), rd.rpm_for(mvr))
+            elif back < 0:                                              # nose-up to something: back straight up
+                mcu.drive(rd.rpm_for(back), rd.rpm_for(back))
             elif pause or v <= 0:
                 mcu.drive(0.0, 0.0)
             else:
@@ -674,7 +752,8 @@ def main():
                           f"GPS {FIX_NAMES.get(fx.get('q'), '?')}, {fx.get('sats', 0)} sats, age {fx.get('age') or '-'}<br>"
                           f"{prog}"
                           f"{f', off line {xt:+.2f} m' if xt is not None else ''}<br>"
-                          f"heading {math.degrees(head) if head is not None else float('nan'):.0f} deg, speed {v:.2f} m/s")
+                          f"heading {math.degrees(head) if head is not None else float('nan'):.0f} deg, speed {v:.2f} m/s"
+                          + (f"<br>avoid: {nav_status(nav, back)}" if nav is not None else ""))
             if rec is not None:
                 if (held or manual) and not rec.on.is_set():
                     rec.on.set()
@@ -695,6 +774,16 @@ def main():
                             fix=fx.get("q"), s=round(S["s"], 2), xt=None if xt is None else round(xt, 3),
                             head=None if head is None else round(math.degrees(head), 2), v=round(v, 3),
                             w=round(w, 3), gz=round(imu.gz, 4), ml=ml, mr=mr, pause=pause, lidar=lid_why))
+            if nav is not None:
+                nr = nav.result
+                log[-1].update(ox=round(S["odom"][0], 3), oy=round(S["odom"][1], 3), oh=round(imu.yaw, 4),
+                               nav_ok=bool(nr.get("ok")), nav_why=nr.get("why", ""), back=back,
+                               nav_dev=None if nr.get("deviation") is None else round(nr["deviation"], 2),
+                               nav_clear=None if nr.get("clearance") is None else round(nr["clearance"], 2),
+                               nav_ms=None if nr.get("ms") is None else round(nr["ms"], 1))
+                if nav.path is not None and now - S.get("nav_path_t", -1e9) >= 1.0:   # the plan, once a second
+                    S["nav_path_t"] = now
+                    S.setdefault("nav_paths", []).append([round(now - t_start, 2), nav.path[::5].round(2).tolist()])
             nxt += 0.05
             time.sleep(max(0.0, nxt - time.monotonic()))
     except KeyboardInterrupt:
@@ -702,6 +791,8 @@ def main():
     finally:
         mcu.stop()
         stop_ev.set()
+        if navt is not None:
+            navt.stop.set()
         st["html"] = f"<b>STOPPED: {reason}</b>"
         print(f"stopped: {reason}", flush=True)
         os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
@@ -709,7 +800,15 @@ def main():
         route_ll = [enu.back(*p) for p in route.p] if route and not a.no_gps else []
         json.dump(dict(args=vars(a), reason=reason, origin=[enu.lat0, enu.lon0], route=route_ll,
                        route_local=[list(p) for p in route.p] if route else [],
-                       track=S["track"], log=log), open(out, "w"))
+                       track=S["track"], log=log, nav_paths=S.get("nav_paths", [])), open(out, "w"))
+        if nav is not None:
+            pm, sm = sorted(nav.stats["plan_ms"]), sorted(nav.stats["scan_ms"])
+            if pm and sm:
+                print(f"planner: {len(pm)} plans, median {pm[len(pm) // 2]:.1f} ms, 95 % {pm[int(len(pm) * .95)]:.1f} ms, "
+                      f"max {pm[-1]:.1f} ms; map update median {sm[len(sm) // 2]:.1f} ms"
+                      + (f"; last error {navt.error}" if navt.error else ""), flush=True)
+            if navt.log:
+                print(f"LiDAR scans: {navt.save_scans(out.replace('.json', '_scans.npz'))}", flush=True)
         print(f"log: {out}", flush=True)
         print(f"GPS jumps rejected: {S.get('jumps', 0)}, GPS fixes ignored by the fusion gate: {S.get('gated', 0)} "
               f"(resets to GPS: {S.get('resets', 0)}), stall faults: {S.get('stalls', 0)}", flush=True)
