@@ -52,7 +52,7 @@ Web app ◀── Events API / MQTT route ◀── Notehub ◀──LTE── N
 - **Bus:** `/dev/i2c-1`. **Address:** `0x17`. `/boot/firmware/config.txt` has `dtparam=i2c_arm=on`.
 - **Permissions:** the user must be in the `i2c` group (`/dev/i2c-1` is `root:i2c 660`). `sdteam22` already is.
 - **Check:** `i2cdetect -y 1` should show `17`.
-- **The bus is shared.** The BNO085 IMU is on the same bus at `0x4A` (see `imu.py`), and there's also an unidentified device at `0x6a`.
+- **The bus is shared** with an unidentified device at `0x6a`. (The BNO085 IMU used to be on this bus at `0x4A`; it is on SPI now, see `imu.py` and `WIRING.md`.)
   If the BNO085 resets in the middle of a transfer it can hold SDA low and **jam the whole bus, including the Notecard**
   (`i2cdetect` hangs). `recover_bus()` in `imu.py` clears it. The Notecard itself has no SPI; it supports only I2C or serial.
 
