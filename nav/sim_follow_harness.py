@@ -27,13 +27,36 @@ sys.path.insert(0, os.path.join(HERE, "..", "motor_cal"))
 import sim_local_nav as sim  # noqa: E402
 
 
+# Harness-only scenarios for what a flat 2D LiDAR gets wrong (16 Nov MSEE run):
+#   kerb          a kerb across the left of the walk at x = 12 m, below the scan plane: invisible, but the robot
+#                 can't drive through it (wheels stall); the way round is on the right (y < -0.6)
+#   slope         the walk rises at x = 14 m: from x = 9.5 to 15 the beams ahead hit the ground ~4.5 m out, a "wall"
+#                 that moves with the robot
+#   person_ahead  someone steps onto the route 2.3 m in front of the robot (when it passes x = 9.7) and stays
+EXTRA = ("kerb", "slope", "person_ahead")
+
+
 class Plant(threading.Thread):
     """The simulated robot + world, stepped at 100 Hz against the wall clock."""
 
     def __init__(self, scn, model, speed, seed=1):
         super().__init__(daemon=True)
         self.rng = np.random.default_rng(seed)
-        self.world = sim.scenario(scn, speed)
+        self.scn = scn
+        self.world = sim.scenario("clear" if scn in EXTRA else scn, speed)
+        self.hidden = np.zeros((0, 3))
+        self.blocked_steps = 0
+        if scn == "kerb":
+            yy = np.arange(-0.6, 1.6, 0.02)
+            self.hidden = np.column_stack((np.full(len(yy), 12.0), yy, np.zeros(len(yy))))
+        if scn == "person_ahead":
+            legs = sim.ped((12.0, 0.1), (1.0, 0.0), stand=(0.0, 1e9))
+            self.seen = False
+
+            def person(t):
+                self.seen = self.seen or self.robot.x >= 9.7
+                return legs(t) if self.seen else []
+            self.world.peds.append(person)
         self.robot = sim.Robot(model, (0.0, 0.0, 0.0), self.rng)
         self.lidar = sim.Lidar(self.rng)
         self.scan, self.scan_t = None, 0.0
@@ -52,9 +75,18 @@ class Plant(threading.Thread):
             now = time.monotonic()
             while nxt <= now:                                  # catch up if a step ran late
                 with self.lock:
+                    before = (self.robot.x, self.robot.y, self.robot.h)
                     self.robot.step()
+                    if len(self.hidden) and sim.rect_clearance((self.robot.x, self.robot.y, self.robot.h), self.hidden) < 0:
+                        self.robot.x, self.robot.y, self.robot.h = before        # against the kerb: wheels stall
+                        self.robot.vl = self.robot.vr = self.robot.r = 0.0
+                        self.blocked_steps += 1
                     pose = (self.robot.x, self.robot.y, self.robot.h)
                     sc = self.lidar.slice(self.world, self.t, pose, self.k)
+                    if sc is not None and self.scn == "slope" and 9.5 <= self.robot.x <= 15.0:
+                        f = sim.ln.FRONT_DEG
+                        sc = [(a_, min(d_, 4500.0 + self.rng.normal(0, 30)) if abs((f - a_ + 180) % 360 - 180) < 50
+                               else d_, q_) for a_, d_, q_ in sc]
                     self.k = (self.k + 1) % 10
                     g = self.robot.gz() - self.imu_bias_est
                     self.yaw += g * sim.DT
@@ -156,7 +188,8 @@ def fake_modules(plant):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scenario", choices=[s for s in sim.SCENARIOS if s not in ("corner_obstacle", "campus_mix",
-                                                                              "osm_offset", "gps_jump")])
+                                                                              "osm_offset", "gps_jump")] + list(EXTRA))
+    ap.add_argument("--flags", default="", help="extra follow.py flags, e.g. \"--no-creep\"")
     ap.add_argument("--model", default="casters", choices=("taped", "casters"))
     ap.add_argument("--speed", type=float, default=0.6)
     ap.add_argument("--avoid", action="store_true")
@@ -182,7 +215,7 @@ def main():
     follow.start_page = fake_page
     follow.page_urls = lambda port: ["(simulated)"]
     sys.argv = ["follow.py", "local", "--points", f"0,0 {a.length:g},0", "--speed", str(a.speed), "--no-video",
-                "--no-ntrip", "--max-s", str(a.max_s)] + (["--avoid"] if a.avoid else [])
+                "--no-ntrip", "--max-s", str(a.max_s)] + (["--avoid"] if a.avoid else []) + a.flags.split()
     plant.start()
     t0 = time.monotonic()
     try:
@@ -203,6 +236,9 @@ def main():
     print(f"follow.py stopped: {lg['reason']} after {log[-1]['t']:.1f} s (wall {wall:.0f} s), "
           f"true end x {tr[-1, 1]:.2f} m of {a.length:g}")
     print(f"min clearance to obstacles (true, chassis rectangle): {min(cl):+.3f} m; max |y| {np.abs(tr[:, 2]).max():.2f} m")
+    if len(plant.hidden):
+        print(f"pushing against the invisible kerb: {plant.blocked_steps * sim.DT:.1f} s")
+    print(f"time to cover the path: {next((t for t, x, y, h in tr if x >= a.length - 0.5), float('nan')):.1f} s (sim time)")
     print(f"control loop: {len(log)} ticks, interval median {np.median(dt) * 1e3:.0f} ms, 99 % {np.percentile(dt, 99) * 1e3:.0f} ms, "
           f"max {dt.max() * 1e3:.0f} ms; paused ticks {stops}")
     if a.avoid:

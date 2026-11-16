@@ -348,12 +348,26 @@ def lidar_check(lid, a):
     return 1.0, ""
 
 
+def gps_paused(S, fix, ok_fix, now, a):
+    """Pause for GPS only once it has been below the needed fix type for more than --gps-grace seconds (16 Nov WALC
+    run: 61 GPS pauses, 32 of them <= 1 s; wheels + gyro hold the pose fine for that long)."""
+    if a.no_gps:
+        return False
+    bad = not fix or fix["q"] not in ok_fix or now - S["pos_t"] > 1.0
+    if not bad:
+        S["gps_ok_t"] = now
+        return False
+    return S["phase"] != "follow" or now - S.get("gps_ok_t", -1e9) > a.gps_grace
+
+
 def nav_status(nav, back):
     r = nav.result
     if back < 0:
-        return "backing up (nose-up to something)"
+        return "backing up" + (" on an arc (K-turn)" if nav.back_k else "")
     if not r.get("ok"):
         return f"<b>{r.get('why') or 'no plan yet'}</b>"
+    if r.get("creep"):
+        return f"<b>{r['why']}</b> (creeping to see if it's real)"
     if r.get("on_route"):
         return f"on the route, {r.get('ms', 0):.0f} ms"
     return (f"bending {r.get('deviation', 0):.1f} m round something, clearance {r.get('clearance', 0):.2f} m"
@@ -370,9 +384,10 @@ def main():
                     help='local: path points "x,y x,y ..." in metres, x forward and y to the left of the start pose '
                          "(default: the L / dog-leg: 1 m, sqrt2 m at 45 deg, 2 m)")
     ap.add_argument("--side", choices=("left", "right"), default="left", help="local: mirror the path to the right")
-    ap.add_argument("--speed", type=float, default=0.3, help="m/s")
+    ap.add_argument("--speed", type=float, default=1.5, help="m/s (1.5 = ~141 wheel rpm of ~195; 0.8 on 16 Nov, 0.3 before)")
     ap.add_argument("--init-m", type=float, default=2.0, help="straight distance used to find the heading")
-    ap.add_argument("--lookahead", type=float, default=1.5, help="pure pursuit look-ahead, m")
+    ap.add_argument("--lookahead", type=float, default=None,
+                    help="pure pursuit look-ahead, m (default max(1.5, 2.5 x speed): ~1.35 s turning lag, 2.0 m at 0.8 m/s)")
     ap.add_argument("--stop-m", type=float, default=0.8, help="stop if something is this close in the path")
     ap.add_argument("--slow-m", type=float, default=2.0, help="half speed if something is this close in the path")
     ap.add_argument("--half-width", type=float, default=0.45, help="half width of the path corridor, m")
@@ -401,12 +416,26 @@ def main():
                     help="--avoid: blocked this long (s) -> also try a 60%% wider corridor (0 = never)")
     ap.add_argument("--no-backup", action="store_true",
                     help="--avoid: never back up when the guard holds it nose-up to something")
+    ap.add_argument("--no-creep", action="store_true",
+                    help="--avoid: when blocked, don't creep towards a block that is > 2 m away (rising ground ahead "
+                         "looks like a wall to the LiDAR; creeping finds out)")
+    ap.add_argument("--stuck-s", type=float, default=1.2,
+                    help="--avoid: driving forward but the wheels moved < 4 cm in this long (s) = pushing against "
+                         "something the LiDAR can't see (a kerb): mark it ahead of the bumper, back up, replan. 0 = off")
+    ap.add_argument("--gps-grace", type=float, default=1.0,
+                    help="keep going this long (s) on wheels + gyro after the fix drops below the needed type, then pause")
+    ap.add_argument("--pivot-deg", type=float, default=75.0,
+                    help="target more than this far off the nose (deg): turn on the spot to face it (0 = never)")
+    ap.add_argument("--pivot-w", type=float, default=1.0, help="turn-on-the-spot rate, rad/s (as the joystick's)")
+    ap.add_argument("--max-stuck", type=int, default=8, help="--avoid: give up after this many stuck events")
     ap.add_argument("--log-scans", action="store_true",
                     help="--avoid: save every LiDAR scan with its poses (logs/..._scans.npz) for offline replay")
     ap.add_argument("--no-gps", action="store_true",
                     help="line: no GPS at all. The line runs straight ahead from where the robot points at the start, "
                          "followed by wheels + gyro (tests the controller on its own)")
     a = ap.parse_args()
+    if a.lookahead is None:
+        a.lookahead = max(1.5, 2.5 * a.speed)
     ok_fix = set(a.min_fix.split(","))
 
     # --- GPS + RTK
@@ -503,7 +532,8 @@ def main():
     if a.avoid:
         if a.mode == "teleop":
             mcu.close(); sys.exit("--avoid needs a path to follow (line, route or local)")
-        nav = ln.LocalNav(corridor_m=a.corridor, widen_after_s=a.widen_after)
+        nav = ln.LocalNav(corridor_m=a.corridor, widen_after_s=a.widen_after,
+                          creep_min_m=0.0 if a.no_creep else 2.0)
         S["odom"] = (0.0, 0.0)
         navt = ln.NavThread(nav, lid, lambda: S.get("nav_poses"), log=a.log_scans)
         navt.start()
@@ -611,10 +641,14 @@ def main():
                 why = "time limit"
             elif now - mcu.t > 0.5:
                 why = "no STM32 telemetry"
+            elif S.get("stuck_n", 0) > a.max_stuck:
+                why = f"stuck {S['stuck_n']} times (something the LiDAR can't see)"
             if not why and ("FAULT" in mcu.flags or "stall2" in mcu.flags):
                 S["stalls"] = S.get("stalls", 0) + 1
                 print(f"{now - t_start:6.1f} s: motor stall fault #{S['stalls']}: clearing it, pausing 1 s", flush=True)
                 mcu.drive(0.0, 0.0); mcu.ser.write(b"reset\n"); time.sleep(1.0)
+                if nav is not None and S["phase"] == "follow" and not a.no_backup and S.get("v_cmd", 0.0) > 0:
+                    S["stuck_now"] = True                              # handled below like a stuck event
                 if S["stalls"] > 3:
                     why = "motor stalled 4 times"
             if why:
@@ -623,7 +657,7 @@ def main():
             pause = None
             if not held:
                 pause = "button not held"
-            elif not a.no_gps and (not fix or fix["q"] not in ok_fix or now - S["pos_t"] > 1.0):
+            elif gps_paused(S, fix, ok_fix, now, a):
                 pause = f"GPS: {FIX_NAMES.get(fix['q'], fix['q']) if fix else 'none'}" + (" (stale)" if now - S["pos_t"] > 1.0 else "")
             elif lid_k == 0.0:
                 pause = lid_why
@@ -702,6 +736,15 @@ def main():
                 k = 2 * math.sin(alpha) / Ld                             # pure pursuit curvature
                 k = max(-1 / a.min_radius, min(1 / a.min_radius, k))    # no tighter than min_radius: no pivots
                 w = v * k
+                # facing well away from the target (16 Nov: started facing the opposite way, 225 s of K-turns
+                # between two bins): turn on the spot instead, like the joystick does. Only the guard's own stop
+                # may be in force (turning in place doesn't move the nose forward), never anything near the chassis.
+                S["pivot_on"] = (a.pivot_deg > 0 and S["phase"] == "follow" and v > 0 and not manual
+                                 and abs(alpha) > math.radians(a.pivot_deg) and (pause is None or pause == lid_why)
+                                 and not (lid_why or "").startswith("something"))
+                S["pivot"] = math.copysign(1.0, alpha)
+            else:
+                S["pivot_on"] = False
             if not pause and v > 0:
                 f = lid_k
                 v, w = v * f, w * f
@@ -722,7 +765,7 @@ def main():
             S["v_cmd"] = v
             back = 0.0
             if nav is not None and S["phase"] == "follow" and not a.no_backup:
-                if manual or (pause is not None and pause != lid_why):
+                if manual or S.get("pivot_on") or (pause is not None and pause != lid_why):
                     nav.cancel_recovery()                              # never back up unless only the guard holds it
                     S["held_s"] = 0.0
                 else:
@@ -731,14 +774,36 @@ def main():
                     if back < 0:
                         S["held_s"] = 0.0
                         S["i"] = 0.0
+                # stuck: driving forward but the wheels aren't moving -> something the LiDAR can't see (16 Nov:
+                # a kerb; it pushed against it for 8 s, 3 stall faults). Mark it ahead of the bumper, back up, replan.
+                ref = S.get("stuck_ref")
+                if back < 0 or pause or v < 0.1 or manual or a.stuck_s <= 0 or S.get("pivot_on"):
+                    S["stuck_ref"] = None
+                elif ref is None or math.dist(ref[1:], S["odom"]) > 0.04:
+                    S["stuck_ref"] = (now, *S["odom"])
+                elif now - ref[0] >= a.stuck_s:
+                    S["stuck_now"] = True
+                if S.pop("stuck_now", False) and back == 0.0 and not manual:
+                    op = (*S["odom"], imu.yaw)
+                    S["stuck_n"] = S.get("stuck_n", 0) + 1
+                    print(f"{now - t_start:6.1f} s: stuck #{S['stuck_n']} (wheels not moving): marking it ahead of "
+                          f"the bumper, backing up", flush=True)
+                    nav.mark_bumper(op)
+                    nav.start_backup(op)
+                    S["stuck_ref"] = None
+                    back = nav.recovery(lid.scan, op, 0.0)
             if manual:
                 tv, tw = tele[0] * a.tele_speed, tele[1] * a.tele_turn
                 if tv > 0 and lid_k == 0.0:                               # LiDAR blocks driving forward into things
                     tv = 0.0
                 mvl, mvr = tv - tw * TRACK_EFF / 2, tv + tw * TRACK_EFF / 2
                 mcu.drive(rd.rpm_for(mvl), rd.rpm_for(mvr))
-            elif back < 0:                                              # nose-up to something: back straight up
-                mcu.drive(rd.rpm_for(back), rd.rpm_for(back))
+            elif S.get("pivot_on"):                                     # turn on the spot to face the target
+                wp = S["pivot"] * a.pivot_w
+                mcu.drive(rd.rpm_for(-wp * TRACK_EFF / 2), rd.rpm_for(wp * TRACK_EFF / 2))
+            elif back < 0:                                              # nose-up to something: back up on an arc
+                bw = nav.back_k * -back                                  # nose swings towards the plan (K-turn)
+                mcu.drive(rd.rpm_for(back - bw * TRACK_EFF / 2), rd.rpm_for(back + bw * TRACK_EFF / 2))
             elif pause or v <= 0:
                 mcu.drive(0.0, 0.0)
             else:
@@ -777,7 +842,7 @@ def main():
             if nav is not None:
                 nr = nav.result
                 log[-1].update(ox=round(S["odom"][0], 3), oy=round(S["odom"][1], 3), oh=round(imu.yaw, 4),
-                               nav_ok=bool(nr.get("ok")), nav_why=nr.get("why", ""), back=back,
+                               nav_ok=bool(nr.get("ok")), nav_why=nr.get("why", ""), back=back, stuck=S.get("stuck_n", 0), pivot=bool(S.get("pivot_on")),
                                nav_dev=None if nr.get("deviation") is None else round(nr["deviation"], 2),
                                nav_clear=None if nr.get("clearance") is None else round(nr["clearance"], 2),
                                nav_ms=None if nr.get("ms") is None else round(nr["ms"], 1))
@@ -811,7 +876,7 @@ def main():
                 print(f"LiDAR scans: {navt.save_scans(out.replace('.json', '_scans.npz'))}", flush=True)
         print(f"log: {out}", flush=True)
         print(f"GPS jumps rejected: {S.get('jumps', 0)}, GPS fixes ignored by the fusion gate: {S.get('gated', 0)} "
-              f"(resets to GPS: {S.get('resets', 0)}), stall faults: {S.get('stalls', 0)}", flush=True)
+              f"(resets to GPS: {S.get('resets', 0)}), stall faults: {S.get('stalls', 0)}, stuck events: {S.get('stuck_n', 0)}", flush=True)
         if S.get("fused") is not None and S["pos"] is not None:
             print(f"at the end the GPS and the fused pose differed by {math.dist(S['fused'], S['pos']):.2f} m", flush=True)
         f = [r for r in log if r["phase"] == "follow" and r["xt"] is not None and not r["pause"]]

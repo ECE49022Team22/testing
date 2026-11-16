@@ -1,0 +1,16 @@
+RTK corrections from 108.59.49.226:9000/MSM4_NEAR
+onboard video: recording starts at the first button press
+hold-to-run page: http://172.20.10.4:8100/  or  http://[2600:382:5401:3468:ef8b:2499:b094:30ad]:8100/
+waiting for a fix of type RTK float/RTK fixed …
+fix: RTK float at 40.4290057, -86.9124867
+obstacle avoidance on: up to 1.5 m either side of the route, search by scikit-image
+heading fit: 28 RTK points over 3.08 m, scatter 5.8 cm
+heading from the first 3.1 m: 32.4 deg (from east, CCW); route 246.3 m, now at 0.0 m
+stopped: arrived
+planner: 2880 plans, median 5.6 ms, 95 % 8.3 ms, max 19.7 ms; map update median 3.3 ms
+LiDAR scans: /home/sdteam22/testing/nav/logs/follow_route_20261116_174252_scans.npz
+log: /home/sdteam22/testing/nav/logs/follow_route_20261116_174252.json
+GPS jumps rejected: 114, GPS fixes ignored by the fusion gate: 56 (resets to GPS: 3), stall faults: 0, stuck events: 0
+at the end the GPS and the fused pose differed by 0.19 m
+off-line distance while following: mean 2.12 m, max 13.19 m, progress 246.0 of 246.3 m
+video: /home/sdteam22/testing/nav/logs/follow_route_20261116_174252.mp4 (10707 frames, 714 s)

@@ -163,6 +163,7 @@ class RollingCostmap:
         self.max_hit, self.max_free = max_hit_m, max_free_m
         self.fp, self.lidar_xy = footprint, lidar_xy
         self.L = np.zeros((self.n, self.n), np.float32)          # [row = y, col = x]
+        self.locked = []                                         # (time, odom points N x 2): kept occupied
         self.x0 = self.y0 = None                                 # odom coords of cell (0, 0)'s corner
         self._hit = np.zeros(self.n * self.n, bool)
         self._free = np.zeros(self.n * self.n + 1, bool)         # last element: where off-grid samples go
@@ -244,7 +245,15 @@ class RollingCostmap:
         f = free[:-1] & ~hit
         L[f] = np.maximum(L[f] - self.miss, self.l_min)
         L[hit] = np.minimum(L[hit] + self.hit, self.l_max)
+        self.stamp_locked()
         self.clear_footprint(pose)
+
+    def stamp_locked(self):
+        """Locked obstacles stay occupied whatever the scans say: the beams pass over a kerb, so they would
+        clear it straight away."""
+        for _, pts in self.locked:
+            r, c, ok = self.cell(pts[:, 0], pts[:, 1])
+            self.L[r[ok], c[ok]] = self.l_max
 
     def clear_footprint(self, pose):
         x, y, h = pose
@@ -263,7 +272,8 @@ class LocalNav:
                  w_corridor_lin=1.0, carrot_m=7.0, w_prev=0.4, prev_skip_m=1.5, route_clear_m=0.6,
                  route_snap_m=0.35, progress_bonus=1.2, replan_s=0.2,
                  widen_after_s=8.0, widen=1.6, a_lat=0.5, clear_slow=(0.35, 0.90), v_min_scale=0.35,
-                 min_radius=1.0, w_kin=20.0, use_mcp=True, **map_kw):
+                 min_radius=1.0, w_kin=20.0, use_mcp=True, creep_min_m=2.0, creep_v=0.25,
+                 bump_pad_m=0.15, bump_depth_m=0.25, bump_keep_s=180.0, **map_kw):
         self.map = RollingCostmap(**map_kw)
         self.lethal, self.inflate, self.w_inflate = lethal_m, inflate_m, w_inflate
         self.corridor, self.w_corridor, self.carrot = corridor_m, w_corridor, carrot_m
@@ -274,6 +284,10 @@ class LocalNav:
         self.min_radius, self.w_kin = min_radius, w_kin
         self.blocked_since = None                                # blocked this long -> try a wider corridor
         self._back = None                                        # odom (x, y) where a back-up started
+        self._back_min = 0.0                                     # back at least this far (m) before stopping
+        self.back_k = 0.0                                        # curvature (1/m) while backing: the K-turn arc
+        self.creep_min, self.creep_v = creep_min_m, creep_v      # creep_min_m <= 0: never creep
+        self.bump_pad, self.bump_depth, self.bump_keep = bump_pad_m, bump_depth_m, bump_keep_s
         self.replan_s, self.a_lat, self.clear_slow, self.v_min_scale = replan_s, a_lat, clear_slow, v_min_scale
         self.use_mcp = use_mcp and MCP_Geometric is not None
         self.route = self.route_s = None
@@ -301,7 +315,7 @@ class LocalNav:
             self.route, self.route_s = resample(pts, 0.1)
 
     def cancel_recovery(self):
-        self._back = None
+        self._back, self._back_min, self.back_k = None, 0.0, 0.0
 
     def add_scan(self, scan, odom_pose):
         t0 = time.perf_counter()
@@ -319,9 +333,9 @@ class LocalNav:
         wide = self.blocked_since is not None and now - self.blocked_since >= self.widen_after
         with self.lock:
             res = self._plan(odom_pose, fused_pose, s_route, wide)
-        if not res["ok"]:
+        if not res["ok"] or res.get("creep"):
             self.blocked_since = now if self.blocked_since is None else self.blocked_since
-            if not wide and self.widen_after > 0:
+            if not res["ok"] and not wide and self.widen_after > 0:
                 res["why"] += f" (waiting; a wider corridor after {self.widen_after:g} s)"
         elif res.get("cap", self.corridor) <= self.corridor:
             self.blocked_since = None                            # back inside the normal corridor
@@ -350,6 +364,7 @@ class LocalNav:
             return {"ok": False, "why": "no route or no scans yet", "v_scale": 0.0}
         rpts, rs = self._route_window(odom_pose, fused_pose, s_route)
         x, y, h = odom_pose
+        narrow = None
         for cap in ((self.corridor, self.corridor * self.widen) if wide else (self.corridor,)):
             box = self._crop(rpts, x, y, cap)
             if box is None:
@@ -358,6 +373,7 @@ class LocalNav:
             occ = M.L[r0:r1, c0:c1] > M.occ
             d_obs = edt(~occ, res) if occ.any() else np.full(occ.shape, 99.0, np.float32)
             if cap == self.corridor:
+                narrow = (d_obs, r0, c0)
                 out = self._route_plan(rpts, rs, x, y, d_obs, r0, c0)   # cheap, and the usual case
                 if out is not None:
                     return out
@@ -368,7 +384,55 @@ class LocalNav:
             if out is not None:
                 out.update(why="" if cap == self.corridor else "corridor widened", cap=cap, crop=box)
                 return out
+        if narrow is not None and self.creep_min > 0:
+            out = self._creep(rpts, rs, x, y, *narrow)
+            if out is not None:
+                return out
         return {"ok": False, "why": "path blocked", "v_scale": 0.0}
+
+    def _creep(self, rpts, rs, x, y, d_obs, r0, c0):
+        """Blocked, but the block is more than creep_min_m away: creep towards it along the route (from where the
+        robot is) at creep_v. Ground the LiDAR hits where the walk rises looks like a wall across everything ~4.5 m
+        ahead (16 Nov, before the crossing by BHEE), and it moves on as the robot moves; a real obstacle comes
+        closer, and creeping stops creep_min_m short of it (then: wait, wider corridor). The guard still stops for
+        anything near."""
+        q0, dq = project(rpts, rs, x, y)
+        m = rs >= q0 + min(1.0, dq)
+        if m.sum() < 2:
+            return None
+        path, ps = resample(np.vstack(([[x, y]], rpts[m])), 0.1)
+        r, c, ok = self._cells(path, r0, c0, d_obs.shape)
+        if not ok.size or not ok[0]:
+            return None
+        d = np.full(len(path), 99.0)
+        d[ok] = d_obs[r, c]
+        bad = np.flatnonzero(d <= self.lethal)
+        free = float(ps[bad[0]]) if len(bad) else float(ps[-1])
+        if free < self.creep_min:
+            return None
+        keep = ps <= free
+        path, ps = path[keep], ps[keep]
+        _, clear, kmax = self._speed(path, ps, d_obs, r0, c0)
+        return {"ok": True, "why": f"creeping: blocked {free:.1f} m ahead", "path": path, "path_s": ps,
+                "goal_s": float(q0 + free), "v_scale": 1.0, "v_cap": self.creep_v, "clearance": clear,
+                "kappa": kmax, "deviation": dq, "cap": self.corridor, "on_route": False, "creep": True}
+
+    # ---- obstacles found by touch
+    def mark_bumper(self, odom_pose, now=None):
+        """The robot is pushing against something the LiDAR can't see (a kerb): lock a strip the chassis's width
+        (+ bump_pad_m each side), bump_depth_m deep, just ahead of the front, into the costmap."""
+        now = time.monotonic() if now is None else now
+        fp, res = self.map.fp, self.map.res / 2
+        gx, gy = np.meshgrid(np.arange(fp[1] + 0.03, fp[1] + 0.03 + self.bump_depth + 1e-9, res),
+                             np.arange(fp[2] - self.bump_pad, fp[3] + self.bump_pad + 1e-9, res))
+        x, y, h = odom_pose
+        c, s = math.cos(h), math.sin(h)
+        pts = np.column_stack((x + c * gx.ravel() - s * gy.ravel(), y + s * gx.ravel() + c * gy.ravel()))
+        with self.lock:
+            self.map.locked = [(t, p) for t, p in self.map.locked
+                               if now - t < self.bump_keep and math.dist(p[0], (x, y)) < 12.0][-30:]
+            self.map.locked.append((now, pts))
+            self.map.stamp_locked()
 
     def _crop(self, rpts, x, y, cap):
         """Map rows / cols around the route window and the robot, padded by the corridor and the inflation, with
@@ -547,6 +611,8 @@ class LocalNav:
         if not r.get("ok"):
             return 0.0
         v = v * r["v_scale"]
+        if r.get("v_cap") is not None:
+            v = min(v, r["v_cap"])
         if r.get("kappa", 0) > 1e-3:
             v = min(v, math.sqrt(self.a_lat / r["kappa"]))
         return v
@@ -567,11 +633,29 @@ class LocalNav:
         q, _ = project(p, s, odom_pose[0], odom_pose[1])
         return at_extended(p, s, q + lookahead)
 
-    def recovery(self, scan, odom_pose, held_s, after_s=2.5, back_m=0.6, v_back=0.15, rear_m=0.45):
-        """Back straight up when the guard has held the robot for after_s although there is a plan: it is
-        nose-up to something and can't turn tighter than its minimum radius. Returns a reverse speed (m/s,
-        negative) to drive both wheels at, or 0.0 to carry on normally. Stops backing after back_m or as
-        soon as anything is within rear_m behind the chassis."""
+    def _back_arc(self, odom_pose):
+        """K-turn: curvature to reverse on so the nose swings towards where the plan goes (turning the way the plan
+        turns, backwards). Straight back when the plan is roughly straight ahead or there's none."""
+        tgt = self.target(odom_pose, 1.5)
+        if tgt is None:
+            return 0.0
+        rx, ry = to_robot(np.array([tgt]), odom_pose)[0]
+        a = math.atan2(ry, rx)
+        return 0.0 if abs(a) < math.radians(10) else math.copysign(1.0 / 0.6, a)   # 0.6 m: both wheels still reverse
+
+    def start_backup(self, odom_pose, min_m=0.5):
+        """Back up now (the robot is stuck against something the LiDAR can't see), at least min_m."""
+        self._back, self._back_min = tuple(odom_pose[:2]), min_m
+        self.back_k = self._back_arc(odom_pose)
+
+    def recovery(self, scan, odom_pose, held_s, after_s=0.5, back_min=0.4, back_m=1.0, v_back=0.4, rear_m=0.45,
+                 back_r=0.6):
+        """Back up when the guard has held the robot for after_s although there is a plan: it is nose-up to
+        something and can't turn tighter than its minimum radius (no pivots: they stall the skid-steer). Reverses
+        on an arc (back_k) so the nose swings towards the plan: a K-turn. Returns a reverse speed (m/s, negative),
+        or 0.0 to carry on normally. Stops once the way ahead is clear (after back_min), after back_m, or as soon
+        as anything is within rear_m behind the chassis.
+        16 Nov (a person in the way): wait 2.5 s, straight back 0.6 m at 0.15 m/s, twice, 26 s to get past."""
         d, ux, uy = scan_rays(scan)
         lx, ly = self.map.lidar_xy
         px, py = lx + d * ux, ly + d * uy
@@ -579,12 +663,16 @@ class LocalNav:
         back = self.map.fp[0]
         rear_clear = not ((px[keep] < back) & (px[keep] > back - rear_m) & (np.abs(py[keep]) < 0.30)).any()
         if self._back is not None:
-            if math.dist(self._back, odom_pose[:2]) >= back_m or not rear_clear:
-                self._back = None
+            gone = math.dist(self._back, odom_pose[:2])
+            done = gone >= max(back_m, self._back_min) or not rear_clear or \
+                (gone >= max(back_min, self._back_min) and self.guard(scan, odom_pose, 0.3)[0] > 0.0)
+            if done:
+                self._back, self._back_min, self.back_k = None, 0.0, 0.0
                 return 0.0
             return -v_back
         if held_s >= after_s and self.path is not None and rear_clear:
-            self._back = tuple(odom_pose[:2])
+            self._back, self._back_min = tuple(odom_pose[:2]), 0.0
+            self.back_k = self._back_arc(odom_pose)
             return -v_back
         return 0.0
 
@@ -750,7 +838,7 @@ class NavThread(threading.Thread):
 
 def load_scans(path):
     """Inverse of NavThread.save_scans: list of (t, odom, fused or None, s or None, scan)."""
-    z = np.load(path)
+    z = dict(np.load(path))                  # load each array once (indexing an NpzFile re-reads it)
     out = []
     for i in range(len(z["t"])):
         a, b = z["offsets"][i], z["offsets"][i + 1]

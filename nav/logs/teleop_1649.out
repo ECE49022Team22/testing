@@ -1,0 +1,11 @@
+RTK corrections from 108.59.49.226:9000/MSM4_NEAR
+onboard video: recording starts at the first button press
+hold-to-run page: http://172.20.10.4:8100/  or  http://[2600:382:5401:3468:ef8b:2499:b094:30ad]:8100/
+waiting for a fix of type no fix/RTK float/DGPS/dead reckoning/GPS/RTK fixed …
+fix: GPS at 40.4280949, -86.9119114
+teleop: drive with the joystick on the page (no path)
+stopped: STOP file
+log: /home/sdteam22/testing/nav/logs/follow_teleop_20261116_164913.json
+GPS jumps rejected: 0, GPS fixes ignored by the fusion gate: 0 (resets to GPS: 0), stall faults: 0
+at the end the GPS and the fused pose differed by 1.02 m
+video: /home/sdteam22/testing/nav/logs/follow_teleop_20261116_164913.mp4 (1334 frames, 89 s)
