@@ -80,6 +80,17 @@ def test_refusals():
     assert d.handle(cmd("route", {}), now())["ok"]
 
 
+def test_cancel():
+    d = quiet()
+    assert d.handle(cmd("cancel", {"deliveryId": "d1"}), now())["result"] == "nothing to cancel"
+    d.handle(cmd("delivery", JOB), now())
+    d.set_fault("stuck 9 times")
+    assert d.handle(cmd("cancel", {"deliveryId": "d2"}), now())["result"] == "nothing to cancel" and d.delivery_id == "d1"
+    assert d.handle(cmd("cancel", {"deliveryId": "d1"}), now())["result"] == "IDLE"
+    assert d.state == "IDLE" and d.delivery_id is None and d.current_leg() is None and d.telemetry()["state"] == "IDLE"
+    assert d.handle(cmd("delivery", dict(JOB, deliveryId="d2")), now())["ok"]                 # free for the next one
+
+
 def test_stale():
     d = quiet()
     assert d.handle(cmd("delivery", JOB, age=601), now())["error"].startswith("stale")

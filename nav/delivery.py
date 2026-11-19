@@ -3,6 +3,7 @@
     IDLE -> delivery -> EN_ROUTE_PICKUP -> (end of leg 1) -> AWAITING_LOAD
          -> unlock, lock (vendor) -> EN_ROUTE_DESTINATION -> (end of leg 2) -> ARRIVED
          -> unlock, lock (customer) -> COMPLETED -> IDLE
+    cancel (operator cleared it in the app): any state -> IDLE
 
 app_link.py calls handle() for each command from the app; follow.py calls arrived_at_stop() at the end of a leg and
 reads current_leg(). Every change (state, lid, fault) adds a telemetry note to `outbox`, which app_link.py sends and
@@ -17,7 +18,7 @@ import uuid
 
 DRIVING = ("EN_ROUTE_PICKUP", "EN_ROUTE_DESTINATION")
 STOPS = ("AWAITING_LOAD", "ARRIVED")
-STALE_S = {"delivery": 600, "unlock": 60, "lock": 60}
+STALE_S = {"delivery": 600, "cancel": 600, "unlock": 60, "lock": 60}
 NOT_STOPPED = "not stopped at the pickup or destination"
 
 
@@ -114,6 +115,8 @@ class Delivery:
             ok, out = False, f"stale: issued {now - issued:.0f} s ago"
         elif typ == "delivery":
             ok, out = self._delivery(body)
+        elif typ == "cancel":
+            ok, out = self._cancel(body)
         elif typ in ("unlock", "lock") and (not self.job or body.get("deliveryId") != self.delivery_id):
             ok, out = False, "not the current delivery"
         elif typ == "unlock":
@@ -142,6 +145,15 @@ class Delivery:
             return False, "bad delivery: needs 2 legs, each a polyline of [lon, lat] points"
         self.job, self.leg, self.opened = job, 0, False
         self._set("EN_ROUTE_PICKUP")
+        return True, self.state
+
+    def _cancel(self, body):
+        """The app cleared this delivery (operator): drop it and go back to IDLE, wherever the robot is."""
+        if not self.job or body.get("deliveryId") != self.delivery_id:
+            return True, "nothing to cancel"
+        self.job = self.leg = None
+        self.opened = False
+        self._set("IDLE")
         return True, self.state
 
     def _unlock(self):

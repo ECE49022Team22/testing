@@ -79,11 +79,13 @@ for `cosmo-beryl.vercel.app`, the same way `ntrip_rtk.py` reaches the RTK caster
 ## The rules (`delivery.py`)
 
 - **Every command is acked.** A repeated `id` gets the first answer again.
-- **Stale commands are refused:** a `delivery` older than 600 s, or an `unlock`/`lock` older than 60 s. The age is
+- **Stale commands are refused:** a `delivery` or `cancel` older than 600 s, or an `unlock`/`lock` older than 60 s. The age is
   judged on the app's clock (`now` vs `issuedAt`), since the Pi has no RTC.
 - **One job at a time:** a second `delivery` during a job is refused `busy…`.
 - **Unlock** works only while stopped at the pickup or destination.
 - **Lock** after the lid was opened at that stop moves the delivery on (7-2).
+- **`cancel`** (the operator cleared the delivery in the app) drops the current job and goes back to `IDLE`, wherever
+  the robot is. For another delivery, or with no job, it is acked "nothing to cancel".
 - **`route`** (the operator link test) is acked but not driven.
 - **Faults:** stalled 4 times, stuck too often, or no STM32 telemetry. Instead of ending the run (as without
   `--app`), it reports `FAULT`, stops and disables driving. Re-enabling clears the fault.
