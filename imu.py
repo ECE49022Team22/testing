@@ -11,7 +11,8 @@ Wiring (Pi header):  BNO085 VIN -> pin 17 (3V3)
                      BNO085 INT -> pin 22 (GPIO25)
                      BNO085 RST -> pin 18 (GPIO24)
                      BNO085 P0  -> pin 16 (GPIO23, WAKE; held high through reset)
-                     BNO085 P1  -> 3V3 (P0 and P1 both high at reset = SPI mode)
+                     BNO085 P1  -> pin 31 (GPIO6, driven high: P0 and P1 both high at reset = SPI mode)
+                     (P1 was on 3V3 pin 1 until 19 Nov 2026; pin 1 now powers the STM32 PCB)
 INT is read with libgpiod edge events (python3-libgpiod), not polled: the process sleeps until
 the chip pulls INT low, and each event carries a kernel timestamp. A watchdog hard-resets the
 chip if samples stop (it can stop signalling INT for good if INT isn't serviced in time).
@@ -32,12 +33,40 @@ import gpiod
 from gpiod.line import Bias, Direction, Edge, Value
 from adafruit_bno08x import (
     BNO_REPORT_ACCELEROMETER,
+    BNO_REPORT_GAME_ROTATION_VECTOR,
+    BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR,
+    BNO_REPORT_GRAVITY,
     BNO_REPORT_GYROSCOPE,
+    BNO_REPORT_LINEAR_ACCELERATION,
+    BNO_REPORT_MAGNETOMETER,
     BNO_REPORT_ROTATION_VECTOR,
     Packet,
     PacketError,
 )
 from adafruit_bno08x.spi import BNO08X_SPI
+
+# How the board is mounted. Since 19 Nov 2026 it is upside down (turned 180 deg about its own X axis), for good.
+# Every reading is converted to the robot's frame as it arrives, so all programs see the same thing as before the
+# flip: z up (accel z ~ +9.8 at rest), positive yaw rate = turning left (CCW seen from above), roll/pitch ~ 0.
+MOUNT_UPSIDE_DOWN = True
+_VECTOR_REPORTS = (BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE, BNO_REPORT_MAGNETOMETER,
+                   BNO_REPORT_LINEAR_ACCELERATION, BNO_REPORT_GRAVITY)
+_QUAT_REPORTS = (BNO_REPORT_ROTATION_VECTOR, BNO_REPORT_GAME_ROTATION_VECTOR, BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR)
+
+
+def to_robot_frame(report_id, value):
+    """Sensor-frame reading -> robot frame for an upside-down mount (180 deg about X): vectors (x, y, z) ->
+    (x, -y, -z); orientation quaternions (i, j, k, real) are multiplied on the right by the mount rotation
+    (1, 0, 0, 0), giving (real, k, -j, -i). Other reports are returned unchanged."""
+    if not MOUNT_UPSIDE_DOWN or value is None:
+        return value
+    if report_id in _VECTOR_REPORTS:
+        x, y, z = value
+        return (x, -y, -z)
+    if report_id in _QUAT_REPORTS:
+        i, j, k, real = value
+        return (real, k, -j, -i)
+    return value
 
 
 def channel_is_data(packet):
@@ -110,6 +139,11 @@ class PiBNO08X_SPI(BNO08X_SPI):
         self.bad_headers = 0           # packets dropped because their length was implausible
         super().__init__(spi_bus, cspin, intpin, resetpin, baudrate=baudrate, debug=debug)
 
+    def _process_report(self, report_id, report_bytes):
+        super()._process_report(report_id, report_bytes)
+        if report_id in self._readings:                  # mounting correction, see MOUNT_UPSIDE_DOWN
+            self._readings[report_id] = to_robot_frame(report_id, self._readings[report_id])
+
     def _wait_int(self, timeout):
         return self._int.wait_low(timeout)
 
@@ -133,7 +167,7 @@ class PiBNO08X_SPI(BNO08X_SPI):
         time.sleep(0.01)
         self._reset.value = True
         if not self._wait_int(1.0):
-            raise RuntimeError("BNO085 never asserted INT after reset (check INT, RST, P0/P1 wiring)")
+            raise RuntimeError("BNO085 never asserted INT after reset (check INT -> GPIO25, RST -> GPIO24, P0 -> GPIO23, P1 -> GPIO6, power)")
 
     def soft_reset(self):
         """Drain the startup packets (advertisement, init response, reset complete)."""
@@ -249,8 +283,9 @@ DEFAULT_REPORTS = (BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE, BNO_REPORT_RO
 def open_imu(reports=DEFAULT_REPORTS, interval_us=50_000, baudrate=1_000_000):
     """Open the BNO085 on SPI0 and enable `reports`. Release with close_imu()."""
     spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
-    cs, rst, wake = (digitalio.DigitalInOut(p) for p in (board.D8, board.D24, board.D23))
-    hw = [spi, cs, rst, wake]
+    cs, rst, wake, ps1 = (digitalio.DigitalInOut(p) for p in (board.D8, board.D24, board.D23, board.D6))
+    ps1.switch_to_output(value=True)     # P1 (PS1) high before the reset in PiBNO08X_SPI: SPI mode
+    hw = [spi, cs, rst, wake, ps1]
     try:
         irq = GpiodInt()
         hw.append(irq)
