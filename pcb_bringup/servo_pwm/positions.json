@@ -1,0 +1,5 @@
+{
+  "_comment": "Standard PWM latch servo on J17 (PB10 TIM2_CH3 via U8). Pulse widths in microseconds. Longer pulse = clockwise. ~0.1 deg/us. Set 19 Nov 2026 after re-fitting the horn.",
+  "closed": 1700,
+  "open": 2050
+}

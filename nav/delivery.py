@@ -39,20 +39,41 @@ def parse_time(v):
 
 
 class Lid:
-    """PLACEHOLDER latch: the STM32 has no latch command yet (PDP 11-4 / 11-5). It only prints. Replace these two
-    methods with the STM32 command, and `state` with the latch position the STM32 reports."""
+    """The compartment latch: the servo on the team PCB's J17, driven by the motor firmware (`servo open` / `servo close`
+    over the STM32 link, robot_drive.Stm32.servo). Unlocked = open (2050 us), locked = closed (1700 us); the firmware
+    ramps the move (~10 s). Without a latch (tests, the simulator, app_check.py) it only prints, as before."""
     state = "locked"
 
+    def __init__(self, latch=None, log=print):
+        self.latch = latch if hasattr(latch, "servo") else None
+        self.log = log
+
     def set(self, state):
-        print(f"LATCH (placeholder): {state}", flush=True)
+        """Move the latch to "locked" / "unlocked". True once the STM32 confirmed (or with no latch fitted)."""
+        if self.latch is None:
+            print(f"LATCH (no servo connected): {state}", flush=True)
+            self.state = state
+            return True
+        r = self.latch.servo("close" if state == "locked" else "open")
+        if r is None:
+            self.log(f"app: latch did not confirm '{state}' (no reply from the STM32)")
+            return False
+        self.log(f"app: latch -> {state} (servo {r['cur']} -> {r['target']} us)")
         self.state = state
+        return True
+
+    def apply(self):
+        """Send the current state to the latch, e.g. after a restart, when the servo isn't being driven yet."""
+        if self.latch is not None:
+            r = self.latch.servo("close" if self.state == "locked" else "open")
+            self.log(f"app: latch set to {self.state} at start" + ("" if r else " FAILED (no reply from the STM32)"))
 
 
 class Delivery:
-    def __init__(self, path=None, log=print):
+    def __init__(self, path=None, log=print, latch=None):
         self.lock = threading.RLock()
         self.path, self.log = path, log
-        self.lid = Lid()
+        self.lid = Lid(latch, log)
         self.state, self.job, self.leg, self.opened, self.fault = "IDLE", None, None, False, None
         self.acks = {}                  # command id -> its ack, so a repeated command isn't run twice
         self.pos = (None, None)         # (lat, lon), kept up to date by follow.py
@@ -60,6 +81,7 @@ class Delivery:
         self.history = []               # for the run log
         if path and os.path.exists(path):
             self.load()
+        self.lid.apply()                # the servo isn't driven after a reboot: put the latch where the state says
 
     # ---------------------------------------------------------------- what follow.py asks
     @property
@@ -159,12 +181,14 @@ class Delivery:
     def _unlock(self):
         if self.state not in STOPS:
             return False, NOT_STOPPED
+        if not self._set_lid("unlocked"):
+            return False, "latch did not respond"
         self.opened = True
-        self._set_lid("unlocked")
         return True, self.lid.state
 
     def _lock(self):
-        self._set_lid("locked")
+        if not self._set_lid("locked"):
+            return False, "latch did not respond"
         if self.state in STOPS and self.opened and self.lid.state == "locked":   # 7-2: only once locked
             self.opened = False
             if self.state == "AWAITING_LOAD":
@@ -182,9 +206,12 @@ class Delivery:
         self._changed(f"state {state}")
 
     def _set_lid(self, state):
+        """Move the lid; False if the latch didn't confirm (the state then stays as it was)."""
         if self.lid.state != state:
-            self.lid.set(state)
+            if not self.lid.set(state):
+                return False
             self._changed(f"lid {state}")
+        return True
 
     def _changed(self, what):
         self.outbox.append(note("telemetry", self.telemetry()))

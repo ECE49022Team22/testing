@@ -1,0 +1,36 @@
+RTK corrections from 108.59.49.226:9000/MSM4_NEAR
+onboard video: recording starts at the first button press
+app: latch set to locked at start
+app link: polling https://cosmo-beryl.vercel.app. Driving is DISABLED: move the robot somewhere safe (joystick or by hand), then press Enable driving on the page
+hold-to-run page: http://172.20.10.4:8100/  or  http://[2600:382:5402:6c44:cdc6:d6c5:730:f629]:8100/
+app: state EN_ROUTE_PICKUP (55c6e97e-1d68-4e9c-9ac9-10f3206bd587)
+app: delivery -> ok
+app: state IDLE
+app: cancel -> ok
+waiting for a fix of type RTK float/RTK fixed …
+fix: RTK float at 40.4283091, -86.9121137
+obstacle avoidance on: up to 1.5 m either side of the route, search by scikit-image
+  24.5 s: driving ENABLED on the page
+app: state EN_ROUTE_PICKUP (4098f988-c5ca-434d-b9e9-312337113b16)
+app: delivery -> ok
+  69.3 s: app leg 1 (pickup) of delivery 4098f988-c5ca-434d-b9e9-312337113b16: 104.8 m, starting 0.0 m along it
+heading fit: 95 RTK points over 2.02 m, scatter 0.8 cm
+heading from the first 2.0 m: 105.2 deg (from east, CCW); route 104.8 m, now at 1.8 m
+app: state AWAITING_LOAD (4098f988-c5ca-434d-b9e9-312337113b16)
+ 820.3 s: end of the leg
+app: latch -> unlocked (servo 1700 -> 2050 us)
+app: lid unlocked (4098f988-c5ca-434d-b9e9-312337113b16)
+app: unlock -> ok
+app: latch -> locked (servo 2050 -> 1700 us)
+app: lid locked (4098f988-c5ca-434d-b9e9-312337113b16)
+app: state EN_ROUTE_DESTINATION (4098f988-c5ca-434d-b9e9-312337113b16)
+app: lock -> ok
+ 875.3 s: app leg 2 (destination) of delivery 4098f988-c5ca-434d-b9e9-312337113b16: 149.0 m, starting 0.2 m along it
+ 966.9 s: motor stall fault #1: clearing it, pausing 1 s
+ 966.9 s: stuck #1 (wheels not moving): marking it ahead of the bumper, backing up
+ 972.0 s: stuck #2 (wheels not moving): marking it ahead of the bumper, backing up
+ 972.8 s: motor stall fault #2: clearing it, pausing 1 s
+ 978.4 s: stuck #3 (wheels not moving): marking it ahead of the bumper, backing up
+ 982.3 s: stuck #4 (wheels not moving): marking it ahead of the bumper, backing up
+ 983.3 s: motor stall fault #3: clearing it, pausing 1 s
+1068.9 s: stuck #5 (wheels not moving): marking it ahead of the bumper, backing up

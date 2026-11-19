@@ -449,7 +449,12 @@ def main():
     ap.add_argument("--stuck-s", type=float, default=1.2,
                     help="--avoid: driving forward but the wheels moved < 4 cm in this long (s) = pushing against "
                          "something the LiDAR can't see (a kerb): mark it ahead of the bumper, back up, replan. 0 = off")
-    ap.add_argument("--gps-grace", type=float, default=1.0,
+    ap.add_argument("--arrive-blocked-m", type=float, default=1.5,
+                    help="blocked by an obstacle this close (m) to the end of the leg: count it as arrived (19 Nov: it "
+                         "backed up and re-approached an obstacle at the stop over and over)")
+    ap.add_argument("--max-backups", type=int, default=3,
+                    help="at most this many back-ups in 30 s; after that it waits for the way to clear instead")
+    ap.add_argument("--gps-grace", type=float, default=3.0,
                     help="keep going this long (s) on wheels + gyro after the fix drops below the needed type, then pause")
     ap.add_argument("--pivot-deg", type=float, default=75.0,
                     help="target more than this far off the nose (deg): turn on the spot to face it (0 = never)")
@@ -507,7 +512,8 @@ def main():
     if a.app:                                                        # robot -> app link (HTTPS, robot polls)
         a.state_file = os.path.expanduser(a.state_file)
         os.makedirs(os.path.dirname(a.state_file), exist_ok=True)
-        dm = dlv.Delivery(a.state_file)                              # resumes a delivery saved before a restart
+        dm = dlv.Delivery(a.state_file, latch=mcu)                   # resumes a delivery saved before a restart;
+                                                                     # the lid is the latch servo on the STM32
         link = app_link.AppLink(dm, a.app_url or app_link.DEFAULT_URL, app_link.load_token(a.app_token_file))
         link.start()
         st.update(app=True, enabled=False)                           # never drives until enabled on the page
@@ -717,7 +723,7 @@ def main():
             if not why and ("FAULT" in mcu.flags or "stall2" in mcu.flags):
                 S["stalls"] = S.get("stalls", 0) + 1
                 print(f"{now - t_start:6.1f} s: motor stall fault #{S['stalls']}: clearing it, pausing 1 s", flush=True)
-                mcu.drive(0.0, 0.0); mcu.ser.write(b"reset\n"); time.sleep(1.0)
+                mcu.drive(0.0, 0.0); mcu.write(b"reset\n"); time.sleep(1.0)
                 if nav is not None and S["phase"] == "follow" and not a.no_backup and S.get("v_cmd", 0.0) > 0:
                     S["stuck_now"] = True                              # handled below like a stuck event
                 if S["stalls"] > 3:
@@ -796,7 +802,7 @@ def main():
                 head = S["heading"] + (imu.yaw - S["yaw0"])
                 x, y = S["fused"]                                      # fused pose, not raw GPS
                 S["s"], xt = route.project(x, y, S["s"])
-                if S["s"] >= route.length - 0.3:
+                if S["s"] >= route.length - 0.3 or (lid_k == 0.0 and route.length - S["s"] <= a.arrive_blocked_m):
                     if dm is None:
                         reason = "arrived"
                         break
@@ -860,7 +866,15 @@ def main():
                     S["held_s"] = 0.0
                 else:
                     S["held_s"] = S.get("held_s", 0.0) + 0.05 if (lid_k == 0.0 and nav.result.get("ok")) else 0.0
-                    back = nav.recovery(lid.scan, (*S["odom"], imu.yaw), S["held_s"])
+                    recent = [t for t in S.get("backs", []) if now - t < 30.0]
+                    S["backs"] = recent
+                    if len(recent) >= a.max_backups and not S.get("backing"):
+                        back = 0.0                                     # backed up too often here: wait instead
+                    else:
+                        back = nav.recovery(lid.scan, (*S["odom"], imu.yaw), S["held_s"])
+                        if back < 0 and not S.get("backing"):
+                            S["backs"].append(now)
+                    S["backing"] = back < 0
                     if back < 0:
                         S["held_s"] = 0.0
                         S["i"] = 0.0
@@ -879,9 +893,16 @@ def main():
                     print(f"{now - t_start:6.1f} s: stuck #{S['stuck_n']} (wheels not moving): marking it ahead of "
                           f"the bumper, backing up", flush=True)
                     nav.mark_bumper(op)
-                    nav.start_backup(op)
                     S["stuck_ref"] = None
-                    back = nav.recovery(lid.scan, op, 0.0)
+                    if len(S.get("backs", [])) >= a.max_backups:       # same 30 s cap as the guard's back-ups
+                        print(f"{now - t_start:6.1f} s: backed up {len(S['backs'])} times in 30 s: not backing up "
+                              f"again, replanning round the marked spot instead", flush=True)
+                    else:
+                        nav.start_backup(op)
+                        back = nav.recovery(lid.scan, op, 0.0)
+                        if back < 0:
+                            S.setdefault("backs", []).append(now)
+                            S["backing"] = True
             if manual:
                 tv, tw = tele[0] * a.tele_speed, tele[1] * a.tele_turn
                 if tv > 0 and lid_k == 0.0:                               # LiDAR blocks driving forward into things

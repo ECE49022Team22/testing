@@ -197,9 +197,9 @@ STM32F091RCT6 on `delivery-robot-pcb` (KiCad, `system-netlist.xml`). Motor pins 
 | Encoder 1 A / B | PA15 / PB3 (TIM2) | **J7** pin 3 / 4 → R28 / R29 1k → U9 74LVC2G17 | motor 1 (right) encoder |
 | Encoder 2 A / B | PA8 / PA9 (TIM1) | **J15** pin 3 / 4 → R32 / R33 1k → U10 74LVC2G17 | motor 2 (left) encoder |
 | Encoder power | — | J7 / J15 pin 1 = +5V_SYS through F8 / F9 0.2 A, pin 2 = GND | encoder 5 V, GND |
-| Servo data | **PB10** USART3_TX half-duplex | U8 SN74LVC1T45 A side (R39 10k to 3.3 V) | |
-| Servo direction | **PB11** (1 = MCU sends, 0 = servo answers) | U8 DIR (R40 10k pull-down) | |
-| Servo connector | — | **J17**: 1 GND, 2 +12 V through F3 5 A, 3 signal (U8 B side, R41 10k to 5 V, R42 100R) | Hiwonder HTS-30HS bus servo, ID 1 (latch: closed = 1000, open = 854) |
+| Latch servo signal | **PB10**, pulses made in software by **TIM15** (TIM2, PB10's only hardware PWM, is encoder 1) | U8 SN74LVC1T45 A side (R39 10k to 3.3 V) | |
+| U8 direction | **PB11**, held high: the STM32 drives the servo line | U8 DIR (R40 10k pull-down) | |
+| Servo connector | — | **J17**: 1 GND, 2 +12 V through F3 5 A (**not used: the servo is a 5 V part**), 3 signal (U8 B side, 5 V, R41 10k, R42 100R) | **Standard 5 V hobby servo** (since 19 Nov evening, replacing the Hiwonder bus servo), powered from a separate 5 V. Latch: **closed = 1700 µs, open = 2050 µs** (50 Hz; longer pulse = clockwise, ~0.1°/µs) |
 
 **Encoder cables:** pin 1 = encoder 5 V, 2 = GND, 3 = A, 4 = B; check the order at the motor end (motor 2's
 cable was found with its 5 V on J15 pin 2 on 19 Nov).
@@ -213,7 +213,9 @@ ground); removing it fixed it.
 STM32 pin 50 (PA15, encoder 1 A) and U10 pin 4 (encoder 2 B) reflowed (open joints).
 
 **Firmware:** the motor firmware is `pwm-lab5` branch `pcb-usart2` (USART2 host link, encoder inversion off). The
-servo firmware is `servo` branch `pcb-usart3`. Only one runs at a time for now; flash with
+**latch servo is part of the motor firmware** (since 19 Nov evening: `servo open|close|<us>|off|rate <us/s>` over
+the same UART; moves ramp at ~33 µs/s, ~10 s open↔close). The Hiwonder bus-servo firmware (`servo` branch `pcb-usart3`)
+is no longer used. Flash with
 `pcb_bringup/flash.sh <file.elf>`.
 
 ## Power
@@ -222,12 +224,13 @@ servo firmware is `servo` branch `pcb-usart3`. Only one runs at a time for now; 
 |---|---|---|
 | Motors (MDD20A VB+/VB−) | 12 V battery | 📄 |
 | Raspberry Pi 5 | USB-C (negotiates 3000 mA) from a separate regulator / supply ❓ | 📄 / ❓ |
-| LiDAR, IMU | Pi header (5 V pin 2, 3.3 V pin 17) | 📄 |
-| GPS | 5 V ❓ | |
+| LiDAR, GPS | **5 V from the buck converter** (since 19 Nov; was Pi pin 2) | 📄 |
+| IMU | Pi 3.3 V (pin 17) | 📄 |
+| (GPS) | see above | |
 | Notecarrier | ~4.2 V on VBAT ❓ source | |
 | STM32 on the PCB | **Pi 3V3, pin 1 → J1 pin 1** (since 19 Nov) | 📄 |
 | Encoders, servo logic | PCB +5V_SYS (5 V buck from the battery on J2) | 📄 |
-| Servo | PCB +12 V through F3 → J17 pin 2 (read 12.6 V at the servo) | ✅ |
+| Latch servo | separate **5 V** (never J17 pin 2: that is +12 V) | 📄 |
 
 The Pi **browns out under motor load** (`vcgencmd get_throttled` = `0x50000` on 16 Nov) and the STM32 has
 reset with it. The STM32 also has **no command watchdog** yet: if the Pi dies, it keeps the last speed target.
@@ -250,5 +253,5 @@ cat /sys/class/pps/pps0/assert                         # count goes up once a se
 .venv/bin/python motor_cal/lidar.py                    # ~10 scans/s, 0 CRC errors
 .venv/bin/python imu.py                                # ~100 Hz, accel z ~ +9.8 (mount corrected)
 pcb_bringup/state.sh                                   # STM32 answers over SWD
-~/servo/tools/pi/servo.sh status                       # servo position / 12 V / temperature (servo firmware)
+printf 'servo\n' > /dev/ttyAMA1                         # latch status (motor firmware; read the reply with a serial terminal)
 ```

@@ -26,6 +26,7 @@ This folder is also reachable as `~/pcb_bringup` (a link).
 | `motor_test/` | motor/encoder test firmware with a RAM mailbox at 0x20000000, driven over SWD (no UART needed). Off at boot; runs only while the Pi keeps writing a fresh `seq` (200 ms watchdog); duty capped at 30 % |
 | `motor.sh status \| watch \| m1 \| m2 \| both` | drives `motor_test` (15 % default, forward 3 s, reverse 3 s) |
 | `motor_test/*.tcl` | `motor.tcl` (status, drive, edge counts, DIR tests), `precheck.tcl` (PWM lines held low before any flash), `pull.tcl` / `encpull.tcl` / `pulltoggle.tcl` (weak-pull tests that find shorts and open joints) |
+| `servo_pwm/` | standard (PWM) latch servo test firmware: PB10 as TIM2_CH3 through U8, pulse width from an SWD mailbox, no pulses at boot; `servo_pwm.sh open|closed|us <n>|status|off` (ramped moves) and `positions.json` (closed 1700 µs, open 2050 µs). Superseded by the latch support in the motor firmware (`servo …` over the UART), which uses TIM15 because TIM2 is encoder 1 there |
 | `servo_probe.tcl`, `servo_move.tcl` | read-only servo probe and single moves for the `servo` firmware (`~/servo`, branch `pcb-usart3`); day-to-day use is `~/servo/tools/pi/servo.sh` |
 
 Built `.elf` files and logs are not committed (`.gitignore`): `motor_test/build.sh`, `heartbeat/build.sh`, the motor

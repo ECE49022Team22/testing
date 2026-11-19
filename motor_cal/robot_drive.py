@@ -31,6 +31,9 @@ WHEEL_C = math.pi * WHEEL_D                       # m per wheel turn
 RIGHT_SIGN, LEFT_SIGN = -1, 1                     # right wheel = motor 1, left wheel = motor 2
 SELF_MM = 150                                     # LiDAR returns closer than this are the robot itself
 STOP_FILE = os.path.expanduser("~/motor_cal/STOP")
+# STM32 link: the team PCB is on the Pi's UART1 (header pins 27/28, dtoverlay=uart1-pi5) since 19 Nov 2026. The Nucleo
+# was on an FTDI adapter (/dev/ttyUSB0): set ROBOT_STM32_PORT=/dev/ttyUSB0 for that.
+STM32_PORT = os.environ.get("ROBOT_STM32_PORT", "/dev/ttyAMA1")
 CAL_FILE = os.path.expanduser("~/motor_cal/robot_geometry.json")
 TEL = re.compile(r"tgt=(-?[\d.]+) meas=(-?[\d.]+) duty=(-?[\d.]+)% cap=(-?[\d.]+)% cnt=(-?\d+) "
                  r"tgt2=(-?[\d.]+) meas2=(-?[\d.]+) duty2=(-?[\d.]+)% cap2=(-?[\d.]+)% cnt2=(-?\d+)(.*)")
@@ -125,13 +128,20 @@ class Imu(threading.Thread):
 
 
 class Stm32:
-    def __init__(self, port="/dev/ttyUSB0"):
-        self.ser = serial.Serial(port, 115200, timeout=0.2)
+    def __init__(self, port=None):
+        self.ser = serial.Serial(port or STM32_PORT, 115200, timeout=0.2)
         self.row, self.t, self.flags = None, 0.0, ""
-        self.replies = []                         # OK/ERR lines, newest last
+        self.replies = []                         # OK/ERR lines, newest last (only the latest few hundred kept)
+        self.replies_dropped = 0                  # how many old replies were trimmed off the front
+        self.wlock = threading.Lock()             # the drive loop and the app thread (latch) both send commands
         self.alive = True
         threading.Thread(target=self._reader, daemon=True).start()
-        self.ser.write(b"reset\nrate 20\n")
+        self.write(b"reset\nrate 20\n")
+
+    def write(self, data):
+        """Send bytes to the STM32. Every write goes through here, so lines from different threads never interleave."""
+        with self.wlock:
+            self.ser.write(data)
 
     def _reader(self):
         while self.alive:
@@ -141,6 +151,9 @@ class Stm32:
                 continue
             if line.startswith(("OK", "ERR")):
                 self.replies.append(line)
+                if len(self.replies) > 400:           # every drive command is acked: don't grow without bound
+                    del self.replies[:200]
+                    self.replies_dropped += 200
             m = TEL.match(line)
             if m:
                 g = [float(x) for x in m.groups()[:10]]
@@ -152,18 +165,30 @@ class Stm32:
         return (g[6] * LEFT_SIGN, g[1] * RIGHT_SIGN), (g[9] * LEFT_SIGN, g[4] * RIGHT_SIGN)
 
     def drive(self, left_rpm, right_rpm):
-        self.ser.write(f"d {right_rpm * RIGHT_SIGN + 0.0:.1f} {left_rpm * LEFT_SIGN + 0.0:.1f}\n".encode())
+        self.write(f"d {right_rpm * RIGHT_SIGN + 0.0:.1f} {left_rpm * LEFT_SIGN + 0.0:.1f}\n".encode())
 
-    def command(self, text, timeout=1.0):
-        """Send a command and return its OK/ERR reply (or None)."""
-        n = len(self.replies)
-        self.ser.write((text + "\n").encode())
+    def command(self, text, timeout=1.0, expect=None):
+        """Send a command and return its OK/ERR reply (or None). With `expect` (e.g. "OK servo"), skip other replies
+        (drive acks from the control loop) and return the first one starting with it, or an ERR naming the command."""
+        n = self.replies_dropped + len(self.replies)
+        self.write((text + "\n").encode())
         end = time.monotonic() + timeout
+        word = text.split()[0] if text.split() else ""
         while time.monotonic() < end:
-            if len(self.replies) > n:
-                return self.replies[n]
+            new = self.replies[max(0, n - self.replies_dropped):]
+            for r in new:
+                if expect is None or r.startswith(expect) or (r.startswith("ERR") and word in r):
+                    return r
+            n += len(new)
             time.sleep(0.01)
         return None
+
+    def servo(self, arg=""):
+        """Latch servo (motor firmware's `servo` command): arg "open", "close", "off", a pulse width in us, or "" for
+        status. Returns {"cur": us, "target": us, "rate": us/s}, or None if the STM32 didn't confirm."""
+        r = self.command(f"servo {arg}".strip(), expect="OK servo")
+        m = re.match(r"OK servo (\d+) us target (\d+) rate (\d+)", r or "")
+        return {"cur": int(m[1]), "target": int(m[2]), "rate": int(m[3])} if m else None
 
     def gains(self, prefix=""):
         """Current gains of motor 1 ("") or motor 2 ("m2 ") as a dict, read by re-sending its kd."""
@@ -173,14 +198,14 @@ class Stm32:
     def stop(self):
         for _ in range(3):
             try:
-                self.ser.write(b"stop\n")
+                self.write(b"stop\n")
             except Exception:
                 pass
             time.sleep(0.05)
 
     def close(self):
         self.stop()
-        self.ser.write(b"rate 10\n")
+        self.write(b"rate 10\n")
         time.sleep(0.1)
         self.alive = False
         self.ser.close()
