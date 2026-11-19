@@ -47,6 +47,8 @@ sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "motor_cal"))
 import ntrip_rtk                      # noqa: E402
 import robot_drive as rd              # noqa: E402
+import app_link                       # noqa: E402
+import delivery as dlv                # noqa: E402
 from lidar_odom import scan_to_points  # noqa: E402
 import local_nav as ln                # noqa: E402
 
@@ -175,6 +177,7 @@ button{border:0;border-radius:14px;font-weight:700;color:#fff;touch-action:none}
 #r{width:100%;height:6vh;font-size:1em;background:#444;margin-top:6px}
 #s{font-size:.95em;line-height:1.45;margin-top:8px}.bad{color:#ff6b6b}
 </style></head><body>
+<button id=e style="display:none;width:100%;height:9vh;font-size:1.2em;margin-bottom:8px;background:#b8432f"></button>
 <button id=b>HOLD TO RUN (autonomous)</button>
 <div id=pad><div class=l style="top:4%">forward</div><div class=l style="bottom:4%">back</div><div id=knob></div></div>
 <div style="text-align:center;color:#888;font-size:.85em">drag to drive by hand &middot; let go to stop</div>
@@ -196,7 +199,11 @@ fetch('/tele?v=0&w=0',{method:'POST'}).catch(()=>{});}
 ['pointerup','pointercancel','lostpointercapture'].forEach(x=>pad.addEventListener(x,jup));
 document.getElementById('r').addEventListener('click',()=>fetch('/rearm',{method:'POST'}));
 document.addEventListener('visibilitychange',()=>{if(document.hidden){up();jup();}});
-setInterval(()=>fetch('/status').then(r=>r.json()).then(j=>{document.getElementById('s').innerHTML=j.html;}).catch(()=>{
+const en=document.getElementById('e');let enabled=false;
+en.addEventListener('click',()=>fetch(enabled?'/disable':'/enable',{method:'POST'}));
+function showEnable(j){if(!j.app)return;enabled=j.enabled;en.style.display='block';
+en.textContent=enabled?'Driving ENABLED (tap to disable)':'Driving disabled: tap to enable';en.style.background=enabled?'#1baf7a':'#b8432f';}
+setInterval(()=>fetch('/status').then(r=>r.json()).then(j=>{document.getElementById('s').innerHTML=j.html;showEnable(j);}).catch(()=>{
 document.getElementById('s').innerHTML='<span class=bad>lost the robot</span>';}),400);
 </script></body></html>"""
 
@@ -224,7 +231,8 @@ def start_page(port, st):
 
         def do_GET(self):
             if self.path.startswith("/status"):
-                return self._send(200, "application/json", json.dumps({"html": st.get("html", "")}).encode())
+                return self._send(200, "application/json", json.dumps(
+                    {"html": st.get("html", ""), "app": bool(st.get("app")), "enabled": bool(st.get("enabled"))}).encode())
             self._send(200, "text/html; charset=utf-8", PAGE.encode())
 
         def do_POST(self):
@@ -242,6 +250,10 @@ def start_page(port, st):
                     pass
             elif self.path.startswith("/rearm"):
                 st["rearm"] = True
+            elif self.path.startswith("/enable"):                     # --app: allow autonomous driving
+                st["enabled"] = True
+            elif self.path.startswith("/disable"):
+                st["enabled"] = False
             self._send(200, "text/plain", b"ok")
 
     srv = Server(("::", port), H)
@@ -377,7 +389,22 @@ def nav_status(nav, back):
 # ---------------------------------------------------------------- main loop
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=("line", "route", "local", "teleop"))
+    ap.add_argument("mode", nargs="?", choices=("line", "route", "local", "teleop"),
+                    help="what to drive (not with --app: the app sends the routes)")
+    ap.add_argument("--app", action="store_true",
+                    help="take deliveries from the Cosmo web app (HTTPS): drive each leg it sends, ack its commands, "
+                         "send telemetry. Starts with driving DISABLED: enable it on the page once the robot is "
+                         "somewhere safe. Without --app nothing talks to the app")
+    ap.add_argument("--app-url", default=None, help="--app: base URL (default https://cosmo-beryl.vercel.app)")
+    ap.add_argument("--app-token-file", default="~/.config/cosmo_robot.env",
+                    help="--app: file with ROBOT_API_TOKEN=... (or set ROBOT_API_TOKEN in the environment)")
+    ap.add_argument("--state-file", default="~/.local/state/cosmo_delivery.json",
+                    help="--app: the delivery in progress is kept here, so a restart (crash, reboot) resumes it")
+    ap.add_argument("--log-every", type=float, default=300.0,
+                    help="--app: write the run log out every this many seconds (s) and start a new part, so a "
+                         "long-running service neither grows nor loses its log on a power cut")
+    ap.add_argument("--link-timeout", type=float, default=60.0,
+                    help="--app: no successful poll for this long (s) while on a leg -> stop until the link is back (S9-1)")
     ap.add_argument("route_file", nargs="?", help="route: JSON list of [lat, lon]")
     ap.add_argument("--length", type=float, default=10.0, help="line: metres to drive")
     ap.add_argument("--points", default="0,0 1,0 2,1 4,1",
@@ -393,7 +420,7 @@ def main():
     ap.add_argument("--half-width", type=float, default=0.45, help="half width of the path corridor, m")
     ap.add_argument("--near-m", type=float, default=0.25, help="stop if anything at all is this close")
     ap.add_argument("--min-fix", default="5,4", help="GGA fix qualities allowed to drive (default RTK float/fixed)")
-    ap.add_argument("--max-s", type=float, default=180)
+    ap.add_argument("--max-s", type=float, default=None, help="time limit, s (default 180; none with --app)")
     ap.add_argument("--min-speed", type=float, default=0.15,
                     help="never creep slower than this while moving (slow skid-steer turns pivot and stall)")
     ap.add_argument("--gps-gain", type=float, default=1.0,
@@ -434,6 +461,16 @@ def main():
                     help="line: no GPS at all. The line runs straight ahead from where the robot points at the start, "
                          "followed by wheels + gyro (tests the controller on its own)")
     a = ap.parse_args()
+    if a.app:
+        if a.mode is not None:
+            ap.error("--app takes no mode: the app sends the routes")
+        if a.no_gps:
+            ap.error("--app needs GPS: the app's routes are in lat/lon")
+        a.mode = "app"
+    elif a.mode is None:
+        ap.error("give a mode (line, route, local, teleop) or --app")
+    if a.max_s is None:
+        a.max_s = float("inf") if a.app else 180.0
     if a.lookahead is None:
         a.lookahead = max(1.5, 2.5 * a.speed)
     ok_fix = set(a.min_fix.split(","))
@@ -466,6 +503,16 @@ def main():
         except Exception as e:
             print(f"onboard video unavailable: {e!r}", flush=True)
             rec = None
+    dm = link = None
+    if a.app:                                                        # robot -> app link (HTTPS, robot polls)
+        a.state_file = os.path.expanduser(a.state_file)
+        os.makedirs(os.path.dirname(a.state_file), exist_ok=True)
+        dm = dlv.Delivery(a.state_file)                              # resumes a delivery saved before a restart
+        link = app_link.AppLink(dm, a.app_url or app_link.DEFAULT_URL, app_link.load_token(a.app_token_file))
+        link.start()
+        st.update(app=True, enabled=False)                           # never drives until enabled on the page
+        print(f"app link: polling {a.app_url or app_link.DEFAULT_URL}. Driving is DISABLED: move the robot "
+              f"somewhere safe (joystick or by hand), then press Enable driving on the page", flush=True)
     srv = start_page(a.port, st)
     print("hold-to-run page: " + "  or  ".join(page_urls(a.port)), flush=True)
 
@@ -493,7 +540,8 @@ def main():
         g = parse_gga(rx.gga.decode(errors="replace")) if rx.gga else None
         q = g["q"] if g else "0"
         st["html"] = (f"waiting for GPS: <b>{FIX_NAMES.get(q, q)}</b>, sats {g['sats'] if g else 0}, "
-                      f"correction age {g['age'] if g and g['age'] else '-'}<br>RTK link: {nt['state']}")
+                      f"correction age {g['age'] if g and g['age'] else '-'}<br>RTK link: {nt['state']}"
+                      + (f"<br>app link: {link.status}" if link else ""))
         if g and q in ok_fix or a.no_gps:
             break
         if os.path.exists(rd.STOP_FILE):
@@ -569,7 +617,30 @@ def main():
                         S["init_pts"] = []                            # restart the heading measurement
             fix = S.get("fix")
 
-            # ---- heading: gyro + GPS course
+            # ---- app (--app): commands -> acks, and the leg to drive
+            arrived = False
+            if dm is not None:
+                en = bool(st.get("enabled"))
+                if en != S.get("was_enabled", False):
+                    print(f"{now - t_start:6.1f} s: driving {'ENABLED' if en else 'disabled'} on the page", flush=True)
+                    if en:
+                        with dm.lock:
+                            dm.clear_fault()                         # re-enabling after a fault clears it
+                    S["was_enabled"] = en
+                with dm.lock:                                        # the link thread changes it too
+                    leg = dm.current_leg()
+                    delivery_id = dm.delivery_id
+                key = (delivery_id, leg[0]) if leg else None
+                if key != S.get("leg_key"):
+                    S["leg_key"] = key
+                    route = Path([enu.to(la, lo) for la, lo in leg[1]]) if leg else None
+                    if route is not None:
+                        px, py = S.get("fused") or S["pos"] or (0.0, 0.0)
+                        S["s"], S["i"] = route.project(px, py, 0.0, window=1e9)[0], 0.0
+                        print(f"{now - t_start:6.1f} s: app leg {leg[0] + 1} ({'pickup' if leg[0] == 0 else 'destination'}) "
+                              f"of delivery {delivery_id}: {route.length:.1f} m, starting {S['s']:.1f} m along it", flush=True)
+                if route is None:
+                    S["init_pts"] = []                               # not moving: no heading measurement
             if S["heading"] is not None:
                 head = S["heading"] + (imu.yaw - S["yaw0"])
                 cp = S["course_pts"]
@@ -608,7 +679,7 @@ def main():
             if nav is not None:                                      # odom: wheels + gyro only, GPS never moves it
                 ox, oy = S["odom"]
                 S["odom"] = (ox + v_odo * dt * math.cos(imu.yaw), oy + v_odo * dt * math.sin(imu.yaw))
-                if S["phase"] != "follow":
+                if S["phase"] != "follow" or route is None:
                     S["nav_poses"] = ((*S["odom"], imu.yaw), None, None)   # map only, nothing to plan yet
             if not a.no_gps and S["pos"] is not None and S["pos_t"] == now and fix:
                 if S.get("fused") is None or head is None:
@@ -630,7 +701,7 @@ def main():
 
             # ---- stop conditions
             held = now - st["hold_t"] < 0.6
-            if nav is not None and S["phase"] == "follow" and now - lid.t <= 0.5:
+            if nav is not None and S["phase"] == "follow" and route is not None and now - lid.t <= 0.5:
                 lid_k, lid_why = nav.guard(lid.scan, (*S["odom"], imu.yaw), S.get("v_cmd", 0.0))  # along the plan
             else:
                 lid_k, lid_why = lidar_check(lid, a)
@@ -651,6 +722,14 @@ def main():
                     S["stuck_now"] = True                              # handled below like a stuck event
                 if S["stalls"] > 3:
                     why = "motor stalled 4 times"
+            if why and dm is not None and why not in ("STOP file", "time limit"):   # --app keeps running: report, disable
+                if st.get("enabled"):
+                    print(f"{now - t_start:6.1f} s: FAULT: {why}. Driving disabled until re-enabled on the page", flush=True)
+                with dm.lock:
+                    dm.set_fault(why)
+                st["enabled"] = S["was_enabled"] = False
+                S["stalls"] = S["stuck_n"] = 0
+                why = None
             if why:
                 reason = why
                 break
@@ -661,6 +740,14 @@ def main():
                 pause = f"GPS: {FIX_NAMES.get(fix['q'], fix['q']) if fix else 'none'}" + (" (stale)" if now - S["pos_t"] > 1.0 else "")
             elif lid_k == 0.0:
                 pause = lid_why
+            if dm is not None:                                       # these come first on the page
+                if route is None:
+                    with dm.lock:
+                        pause = dm.waiting_for() or "no leg to drive"
+                elif not st.get("enabled"):
+                    pause = "driving disabled: move the robot somewhere safe, then tap Enable driving"
+                elif link.age() > a.link_timeout:
+                    pause = f"app link lost for {link.age():.0f} s: stopped until it is back"
 
             # ---- joystick (manual driving) overrides autonomy while it's being used
             tele = st.get("tele")
@@ -690,7 +777,7 @@ def main():
                     ip.append((*S["pos"], imu.yaw))
                 moved = math.dist(ip[0][:2], ip[-1][:2]) if len(ip) >= 2 else 0.0
                 fit = line_fit([q[:2] for q in ip]) if len(ip) >= 8 else None
-                if moved >= a.init_m and fit and fit[2] < 0.15:
+                if moved >= a.init_m and fit and fit[2] < 0.15 and (dm is None or route is not None):
                     ix, iy = ip[0][:2]
                     mid_yaw = sum(q[2] for q in ip) / len(ip)
                     S["heading"] = fit[0] - (mid_yaw - imu.yaw)               # heading now = course + gyro since
@@ -705,13 +792,16 @@ def main():
                           f"route {route.length:.1f} m, now at {S['s']:.1f} m", flush=True)
                 else:
                     v, w = a.speed * 0.7, 0.0                           # straight, gyro holds zero turn
-            if S["phase"] == "follow":
+            if S["phase"] == "follow" and route is not None:
                 head = S["heading"] + (imu.yaw - S["yaw0"])
                 x, y = S["fused"]                                      # fused pose, not raw GPS
                 S["s"], xt = route.project(x, y, S["s"])
                 if S["s"] >= route.length - 0.3:
-                    reason = "arrived"
-                    break
+                    if dm is None:
+                        reason = "arrived"
+                        break
+                    arrived = True                                     # --app: stop here, wait for the next command
+                    pause = pause or "arrived at the end of the leg"
                 v = a.speed * min(1.0, (route.length - S["s"]) / 1.0 + 0.3)
                 if nav is None:
                     tx, ty = route.at_extended(S["s"] + a.lookahead)
@@ -809,9 +899,25 @@ def main():
             else:
                 mcu.drive(rd.rpm_for(vl), rd.rpm_for(vr))
 
+            # ---- app (--app): position for the app, end of a leg
+            if dm is not None:
+                p = S.get("fused") or S["pos"]
+                with dm.lock:
+                    dm.pos = tuple(round(c, 7) for c in enu.back(*p)) if p else (None, None)
+                    if arrived:
+                        dm.arrived_at_stop()
+                if arrived:
+                    route, S["leg_key"] = None, None
+                    print(f"{now - t_start:6.1f} s: end of the leg", flush=True)
+
             # ---- status + log
             fx = fix or {}
             prog = "teleop" if a.mode == "teleop" else f"progress {S['s']:.1f} / {route.length if route else a.length:.1f} m"
+            if dm is not None:
+                prog = (f"app: <b>{dm.state}</b>{' FAULT: ' + dm.fault if dm.fault else ''}"
+                        f"{', delivery ' + str(dm.delivery_id) if dm.delivery_id else ''}, lid {dm.lid.state}<br>"
+                        f"app link {link.status}, last poll {link.age():.0f} s ago<br>"
+                        + (f"leg progress {S['s']:.1f} / {route.length:.1f} m" if route else "no leg"))
             st["html"] = (f"<b>{'PAUSED: ' + pause if pause else ('RUNNING' if S['phase'] == 'follow' else 'finding heading')}</b>"
                           f"{'<br>' + lid_why if lid_why and not pause else ''}<br>"
                           f"GPS {FIX_NAMES.get(fx.get('q'), '?')}, {fx.get('sats', 0)} sats, age {fx.get('age') or '-'}<br>"
@@ -839,6 +945,8 @@ def main():
                             fix=fx.get("q"), s=round(S["s"], 2), xt=None if xt is None else round(xt, 3),
                             head=None if head is None else round(math.degrees(head), 2), v=round(v, 3),
                             w=round(w, 3), gz=round(imu.gz, 4), ml=ml, mr=mr, pause=pause, lidar=lid_why))
+            if dm is not None:
+                log[-1].update(app=dm.state, fault=dm.fault, enabled=bool(st.get("enabled")), link_age=round(min(link.age(), 1e6), 1))
             if nav is not None:
                 nr = nav.result
                 log[-1].update(ox=round(S["odom"][0], 3), oy=round(S["odom"][1], 3), oh=round(imu.yaw, 4),
@@ -849,6 +957,15 @@ def main():
                 if nav.path is not None and now - S.get("nav_path_t", -1e9) >= 1.0:   # the plan, once a second
                     S["nav_path_t"] = now
                     S.setdefault("nav_paths", []).append([round(now - t_start, 2), nav.path[::5].round(2).tolist()])
+            if dm is not None and now - S.setdefault("log_t0", now) >= a.log_every:   # --app: write a log part
+                S["log_t0"], S["part"] = now, S.get("part", 0) + 1
+                os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
+                part = os.path.join(HERE, "logs", f"follow_{a.mode}_{stamp}_part{S['part']:03d}.json")
+                with dm.lock:
+                    events, dm.history = dm.history, []
+                json.dump(dict(args=vars(a), part=S["part"], origin=[enu.lat0, enu.lon0], track=S["track"], log=log,
+                               nav_paths=S.get("nav_paths", []), app_events=events), open(part, "w"))
+                log, S["track"], S["nav_paths"] = [], [], []
             nxt += 0.05
             time.sleep(max(0.0, nxt - time.monotonic()))
     except KeyboardInterrupt:
@@ -856,6 +973,8 @@ def main():
     finally:
         mcu.stop()
         stop_ev.set()
+        if link is not None:
+            link.stop()
         if navt is not None:
             navt.stop.set()
         st["html"] = f"<b>STOPPED: {reason}</b>"
@@ -865,7 +984,8 @@ def main():
         route_ll = [enu.back(*p) for p in route.p] if route and not a.no_gps else []
         json.dump(dict(args=vars(a), reason=reason, origin=[enu.lat0, enu.lon0], route=route_ll,
                        route_local=[list(p) for p in route.p] if route else [],
-                       track=S["track"], log=log, nav_paths=S.get("nav_paths", [])), open(out, "w"))
+                       track=S["track"], log=log, nav_paths=S.get("nav_paths", []),
+                       app_events=dm.history if dm is not None else []), open(out, "w"))
         if nav is not None:
             pm, sm = sorted(nav.stats["plan_ms"]), sorted(nav.stats["scan_ms"])
             if pm and sm:

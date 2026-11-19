@@ -7,7 +7,9 @@ copy of the control loop.
     python3 nav/sim_follow_harness.py bike_rack --plot rack.png --avoid
     python3 nav/sim_follow_harness.py trash_can                 # without --avoid: today's follow.py
 
-It uses follow.py's `local` mode (no GPS: the path is in metres from the start pose), so only straight-route
+    python3 nav/sim_follow_harness.py clear --app --length 24  # follow.py --app: a whole delivery via fake_app.py
+
+Without --app it uses follow.py's `local` mode (no GPS: the path is in metres from the start pose), so only straight-route
 scenarios apply. Logs go to a temporary folder, not nav/logs.
 """
 import argparse
@@ -185,6 +187,157 @@ def fake_modules(plant):
     return rd, nt
 
 
+LAT0, LON0 = 40.4286, -86.9115                              # sim origin (BHEE courtyard); x = east, y = north
+
+
+def sim_to_ll(x, y):
+    k = math.cos(math.radians(LAT0))
+    return LAT0 + math.degrees(y / 6378137.0), LON0 + math.degrees(x / (6378137.0 * k))
+
+
+def fake_gps(plant, rng):
+    """ntrip_rtk.Receiver stand-in: RTK-fixed GGA of the simulated robot at 5 Hz, 1 cm noise."""
+    class Receiver:
+        def __init__(self, *a):
+            pass
+
+        @property
+        def gga(self):
+            k = int(time.monotonic() * 5)
+            if getattr(self, "_k", None) != k:
+                self._k = k
+                with plant.lock:
+                    x, y = plant.robot.x + rng.normal(0, 0.01), plant.robot.y + rng.normal(0, 0.01)
+                lat, lon = sim_to_ll(x, y)
+                self._s = (f"$GNGGA,{k % 100000:06d}.00,{int(lat):02d}{(lat % 1) * 60:010.7f},N,"
+                           f"{int(-lon):03d}{(-lon % 1) * 60:010.7f},W,4,24,0.6,190.0,M,-33.0,M,1.0,0000*00").encode()
+            return self._s
+    return Receiver
+
+
+def run_app(a, plant, rd, nt):
+    """follow.py --app against the simulator and fake_app.py: a full delivery, with a vendor and a customer pressing
+    the buttons, an unlock sent while driving (must be refused) and a link outage on the second leg (must stop it)."""
+    import json
+    from fake_app import FakeApp
+    nt.Receiver = fake_gps(plant, np.random.default_rng(7))
+    sys.modules["robot_drive"], sys.modules["ntrip_rtk"] = rd, nt
+    import follow
+    tmp = tempfile.mkdtemp(prefix="follow_app_")
+    follow.HERE = tmp
+    app = FakeApp(poll_seconds=1)
+    os.environ["ROBOT_API_TOKEN"] = "test"
+    pick, dest = a.length * 0.45, a.length
+    ll = lambda x, y: [round(v, 8) for v in sim_to_ll(x, y)[::-1]]              # [lon, lat], as the app sends
+    job = {"deliveryId": "sim1", "profile": "foot-walking",
+           "pickup": dict(zip(("lat", "lon"), sim_to_ll(pick, 0)), name="sim pickup"),
+           "destination": dict(zip(("lat", "lon"), sim_to_ll(dest, 0)), label="sim destination"),
+           "legs": [{"to": "pickup", "polyline": [ll(0, 0), ll(pick / 2, 0), ll(pick, 0)]},
+                    {"to": "destination", "polyline": [ll(pick, 0), ll(dest, 0)]}]}
+    ev = {"moved_before_enable": 0.0, "enable_t": None, "outage": None, "stops": {}, "restart": None}
+    cur = {"st": None, "run": 1}
+    t0 = time.monotonic()
+
+    def ops():
+        app.add("delivery", job)                                       # arrives while driving is still disabled
+        time.sleep(6)
+        with plant.lock:
+            ev["moved_before_enable"] = math.hypot(plant.robot.x, plant.robot.y)
+        cur["st"]["enabled"], ev["enable_t"] = True, time.monotonic() - t0
+        seen = set()
+        while True:
+            st = cur["st"]
+            st["hold_t"] = time.monotonic()
+            tel = app.telemetry()
+            state = tel[-1]["state"] if tel else None
+            with plant.lock:
+                x = plant.robot.x
+            if state == "EN_ROUTE_PICKUP" and x > 3 and "early" not in seen:
+                seen.add("early")
+                app.add("unlock", {"deliveryId": "sim1"}, cid="unlock-while-driving")
+            if state in ("AWAITING_LOAD", "ARRIVED") and state not in seen:
+                seen.add(state)
+                with plant.lock:
+                    ev["stops"][state] = (plant.robot.x, plant.robot.y)
+                time.sleep(2)
+                app.add("unlock", {"deliveryId": "sim1"})
+                time.sleep(2)
+                app.add("lock", {"deliveryId": "sim1"})
+            if state == "EN_ROUTE_DESTINATION" and x > pick + 3 and a.restart and "restart" not in seen:
+                seen.add("restart")                                # follow.py dies mid-leg; the service restarts it
+                open(rd.STOP_FILE, "w").close()
+                while cur["run"] == 1:
+                    time.sleep(0.05)
+                with plant.lock:
+                    x0 = plant.robot.x
+                time.sleep(8)                                      # new run: driving must be disabled again
+                with plant.lock:
+                    ev["restart"] = (x0, plant.robot.x - x0)
+                cur["st"]["enabled"] = True
+                continue
+            if state == "EN_ROUTE_DESTINATION" and x > pick + 3 and not a.restart and "outage" not in seen:
+                seen.add("outage")
+                app.offline, ev["outage"] = True, (time.monotonic() - t0, x)
+                time.sleep(a.link_timeout + 4)
+                app.offline = False
+            if state == "IDLE" and "ARRIVED" in seen:
+                time.sleep(1)
+                cur["done"] = True
+                open(rd.STOP_FILE, "w").close()
+                return
+            time.sleep(0.1)
+
+    def fake_page(port, st):
+        cur["st"] = st
+        if cur.get("ops") is None:
+            cur["ops"] = threading.Thread(target=ops, daemon=True)
+            cur["ops"].start()
+        return None
+    follow.start_page = fake_page
+    follow.page_urls = lambda port: ["(simulated)"]
+    sys.argv = ["follow.py", "--app", "--app-url", app.url, "--speed", str(a.speed), "--no-video", "--no-ntrip",
+                "--max-s", str(a.max_s), "--link-timeout", str(a.link_timeout), "--log-every", "15",
+                "--state-file", os.path.join(tmp, "delivery.json")] + (["--avoid"] if a.avoid else []) + a.flags.split()
+    argv = list(sys.argv)
+    plant.start()
+    try:
+        follow.main()
+        if a.restart and not cur.get("done"):                          # the "service" starts it again
+            os.remove(rd.STOP_FILE)
+            sys.argv = argv
+            cur["run"] = 2
+            print("\n--- restarting follow.py (as the boot service would) ---\n", flush=True)
+            follow.main()
+    finally:
+        plant.stop.set()
+        time.sleep(1.5)
+    import glob
+    files = sorted(glob.glob(os.path.join(tmp, "logs", "follow_app_*.json")))
+    parts = [json.load(open(f)) for f in files if "_part" in f]
+    lg = json.load(open([f for f in files if "_part" not in f][-1]))
+    lg["log"] = [r for p in parts for r in p["log"]] + lg["log"]                 # whole run, parts first
+    lg["app_events"] = [e for p in parts for e in p["app_events"]] + lg["app_events"]
+    states = [t["state"] for t in app.telemetry()]
+    print(f"\n=== follow.py --app | {a.model} {a.speed} m/s | {'--avoid' if a.avoid else 'no --avoid'} ===")
+    print(f"stopped: {lg['reason']}; telemetry states: {' -> '.join(s for i, s in enumerate(states) if i == 0 or s != states[i - 1])}")
+    print(f"moved before 'Enable driving' (delivery already received): {ev['moved_before_enable']:.3f} m")
+    for st_, (x, y) in ev["stops"].items():
+        want = pick if st_ == "AWAITING_LOAD" else dest
+        print(f"{st_}: robot at x {x:.2f}, y {y:+.2f} m; stop point x {want:.1f} m -> {math.hypot(x - want, y):.2f} m away")
+    for ack in app.acks():
+        print(f"ack {ack['type']:8s} {ack['id'][:20]:20s} ok={ack['ok']} {ack.get('error') or ack.get('result')}")
+    if ev["restart"]:
+        print(f"restart mid-leg at x {ev['restart'][0]:.1f} m: moved {ev['restart'][1]:.3f} m before driving was "
+              f"re-enabled; parts written: {len(parts)}")
+    if ev["outage"]:
+        t_out, x_out = ev["outage"]
+        lost = [r for r in lg["log"] if (r["pause"] or "").startswith("app link lost")]
+        print(f"link outage from t={t_out:.0f} s at x {x_out:.1f} m: paused 'app link lost' for {len(lost) * 0.05:.1f} s, "
+              f"speed while paused max {max((r['v'] for r in lost), default=float('nan')):.2f} m/s")
+    print(f"app events: {len(lg['app_events'])}, uplinked notes: {len(app.order)}")
+    app.close()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scenario", choices=[s for s in sim.SCENARIOS if s not in ("corner_obstacle", "campus_mix",
@@ -196,10 +349,16 @@ def main():
     ap.add_argument("--length", type=float, default=30.0)
     ap.add_argument("--plot")
     ap.add_argument("--max-s", type=float, default=150)
+    ap.add_argument("--app", action="store_true",
+                    help="run follow.py --app against fake_app.py: one full delivery (use the 'clear' scenario)")
+    ap.add_argument("--restart", action="store_true", help="--app: restart follow.py mid-leg instead of the outage test")
+    ap.add_argument("--link-timeout", type=float, default=3.0, help="--app: follow.py's --link-timeout for the outage test")
     a = ap.parse_args()
 
     plant = Plant(a.scenario, a.model, a.speed)
     rd, nt = fake_modules(plant)
+    if a.app:
+        return run_app(a, plant, rd, nt)
     sys.modules["robot_drive"], sys.modules["ntrip_rtk"] = rd, nt
     import follow
     tmp = tempfile.mkdtemp(prefix="follow_sim_")
