@@ -34,3 +34,9 @@ app: lock -> ok
  982.3 s: stuck #4 (wheels not moving): marking it ahead of the bumper, backing up
  983.3 s: motor stall fault #3: clearing it, pausing 1 s
 1068.9 s: stuck #5 (wheels not moving): marking it ahead of the bumper, backing up
+stopped: STOP file
+planner: 5000 plans, median 6.3 ms, 95 % 9.3 ms, max 92.5 ms; map update median 3.9 ms
+log: /home/sdteam22/testing/nav/logs/follow_app_20261119_160757.json
+GPS jumps rejected: 30, GPS fixes ignored by the fusion gate: 30 (resets to GPS: 1), stall faults: 3, stuck events: 5
+at the end the GPS and the fused pose differed by 0.01 m
+video: /home/sdteam22/testing/nav/logs/follow_app_20261119_160757.mp4 (24933 frames, 1662 s)
