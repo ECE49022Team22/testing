@@ -454,6 +454,9 @@ def main():
     ap.add_argument("--arrive-blocked-m", type=float, default=1.5,
                     help="blocked by an obstacle this close (m) to the end of the leg: count it as arrived (19 Nov: it "
                          "backed up and re-approached an obstacle at the stop over and over)")
+    ap.add_argument("--arrive-gps-m", type=float, default=5.0,
+                    help="--app destination leg: arrived once an RTK fix is this close (m) to the destination pin, "
+                         "even before the end of the route (20 Nov: the route's end at EE8 ran up to a kerb). 0 = off")
     ap.add_argument("--max-backups", type=int, default=3,
                     help="at most this many back-ups in 30 s; after that it waits for the way to clear instead")
     ap.add_argument("--gps-grace", type=float, default=3.0,
@@ -637,11 +640,13 @@ def main():
                     S["was_enabled"] = en
                 with dm.lock:                                        # the link thread changes it too
                     leg = dm.current_leg()
+                    pin = dm.destination()
                     delivery_id = dm.delivery_id
                 key = (delivery_id, leg[0]) if leg else None
                 if key != S.get("leg_key"):
                     S["leg_key"] = key
                     route = Path([enu.to(la, lo) for la, lo in leg[1]]) if leg else None
+                    S["pin"], S["said_pin"] = (enu.to(*pin) if pin and a.arrive_gps_m > 0 else None), False
                     if route is not None:
                         px, py = S.get("fused") or S["pos"] or (0.0, 0.0)
                         S["s"], S["i"] = route.project(px, py, 0.0, window=1e9)[0], 0.0
@@ -804,7 +809,13 @@ def main():
                 head = S["heading"] + (imu.yaw - S["yaw0"])
                 x, y = S["fused"]                                      # fused pose, not raw GPS
                 S["s"], xt = route.project(x, y, S["s"])
-                if S["s"] >= route.length - 0.3 or (lid_k == 0.0 and route.length - S["s"] <= a.arrive_blocked_m):
+                near_pin = (S.get("pin") is not None and fix and fix["q"] in RTK and now - S["pos_t"] < 1.0
+                            and math.dist(S["pos"], S["pin"]) <= a.arrive_gps_m)
+                if near_pin and not S.get("said_pin"):
+                    S["said_pin"] = True
+                    print(f"{now - t_start:6.1f} s: GPS {math.dist(S['pos'], S['pin']):.1f} m from the destination pin: "
+                          f"arrived", flush=True)
+                if near_pin or S["s"] >= route.length - 0.3 or (lid_k == 0.0 and route.length - S["s"] <= a.arrive_blocked_m):
                     if dm is None:
                         reason = "arrived"
                         break

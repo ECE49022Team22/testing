@@ -54,6 +54,18 @@ def test_full_delivery_reports_every_state():
                          "ARRIVED", "ARRIVED", "ARRIVED", "COMPLETED", "IDLE"]           # incl. the two lid changes
 
 
+def test_destination_pin_only_on_the_destination_leg():
+    d = quiet()
+    d.handle(cmd("delivery", dict(JOB, destination={"lat": 40.4282, "lon": -86.9121, "label": "EE8"})), now())
+    assert d.destination() is None
+    d.arrived_at_stop()
+    d.handle(cmd("unlock", {"deliveryId": "d1"}), now())
+    d.handle(cmd("lock", {"deliveryId": "d1"}), now())
+    assert d.destination() == (40.4282, -86.9121)
+    d.arrived_at_stop()
+    assert d.destination() is None
+
+
 def test_unlock_only_when_stopped():
     d = quiet()
     d.handle(cmd("delivery", JOB), now())

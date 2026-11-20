@@ -98,6 +98,11 @@ class Delivery:
             return None
         return self.leg, [(p[1], p[0]) for p in self.job["legs"][self.leg]["polyline"]]
 
+    def destination(self):
+        """(lat, lon) of the destination pin the app sent, while driving the destination leg, else None."""
+        d = self.job.get("destination") if self.state == "EN_ROUTE_DESTINATION" else None
+        return (d["lat"], d["lon"]) if d else None
+
     def waiting_for(self):
         return {"IDLE": "waiting for a delivery from the app",
                 "AWAITING_LOAD": "at the pickup: waiting for the vendor to load and lock",
