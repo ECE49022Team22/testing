@@ -8,7 +8,7 @@ Near buildings RTK float can be off by ~8 m (7 Nov: it put the robot inside BHEE
 track by tens of degrees. Building walls seen by the LiDAR pin both down without GPS beyond a rough area:
 - walls: the OSM building polygons (Overpass `way["building"] out geom`) rasterised into a 0.1 m grid, then a
   distance transform (metres to the nearest wall);
-- scan: points in the robot frame (lidar_odom.scan_to_points: x forward, y left, LiDAR front 271.5 deg), several
+- scan: points in the robot frame (lidar_odom.scan_to_points: x forward, y left, origin at the turning centre), several
   scans merged and thinned;
 - search: every heading (2 deg steps) x every position within --radius of the rough estimate (0.5 m steps), score =
   mean of min(distance to wall, 0.5 m) over the points (trees, benches and people cost at most 0.5 m each), then a

@@ -207,6 +207,8 @@ class Lidar:
         j = np.arange(k * n, (k + 1) * n) + self.phase
         a = j * 360.0 / self.N                                   # LiDAR angle, clockwise
         x, y, h = pose
+        x, y = (x + ln.LIDAR_X * math.cos(h) - ln.LIDAR_Y * math.sin(h),     # beams start at the LiDAR,
+                y + ln.LIDAR_X * math.sin(h) + ln.LIDAR_Y * math.cos(h))     # not the turning centre
         th = h + np.radians(self.front - a)
         dx, dy = np.cos(th), np.sin(th)
         best = np.full(n, np.inf)

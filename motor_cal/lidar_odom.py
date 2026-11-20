@@ -9,21 +9,24 @@ import math
 import numpy as np
 from scipy.spatial import cKDTree
 
-FRONT_DEG = 271.5          # LiDAR angle of the robot's front (straight test legs, scan matching, 2026-11-04;
-                           # the first forward probe said ~254)
+FRONT_DEG = 180.0          # LiDAR angle of the robot's front. 20 Nov 2026, after the rebuild: an object held straight
+                           # ahead showed at 176-177 deg (was 271.5 from straight legs + scan matching on 4 Nov, before
+                           # the LiDAR was moved). Angles still increase clockwise.
+LIDAR_X, LIDAR_Y = 0.29, 0.0   # m: LiDAR position relative to the turning centre (x forward, y left). Since 20 Nov it
+                               # sits at the very front, ~290 mm ahead of the middle (was assumed at the centre).
 SELF_MM = 150              # closer returns are the robot's own chassis
 MAX_MM = 8000
 GRID_M = 0.04              # voxel downsampling
 
 
 def scan_to_points(scan):
-    """[(angle_deg, dist_mm, intensity)] -> Nx2 array (m) in the robot frame, downsampled."""
+    """[(angle_deg, dist_mm, intensity)] -> Nx2 array (m) in the robot frame (origin = turning centre), downsampled."""
     a = np.array([p[0] for p in scan], dtype=float)
     d = np.array([p[1] for p in scan], dtype=float)
     keep = (d > SELF_MM) & (d < MAX_MM)
     a, d = a[keep], d[keep] / 1000.0
     th = np.radians(FRONT_DEG - a)                     # clockwise LiDAR angle -> CCW robot angle
-    pts = np.column_stack((d * np.cos(th), d * np.sin(th)))
+    pts = np.column_stack((LIDAR_X + d * np.cos(th), LIDAR_Y + d * np.sin(th)))   # LiDAR offset -> turning centre
     if len(pts) == 0:
         return pts
     key = np.floor(pts / GRID_M).astype(np.int64)      # one point per 4 cm cell

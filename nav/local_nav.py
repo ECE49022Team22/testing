@@ -48,9 +48,9 @@ from scipy.ndimage import distance_transform_edt
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "motor_cal"))
 try:
-    from lidar_odom import FRONT_DEG, SELF_MM            # one source of truth for the LiDAR's mounting
+    from lidar_odom import FRONT_DEG, SELF_MM, LIDAR_X, LIDAR_Y   # one source of truth for the LiDAR's mounting
 except Exception:                                        # pragma: no cover
-    FRONT_DEG, SELF_MM = 271.5, 150
+    FRONT_DEG, SELF_MM, LIDAR_X, LIDAR_Y = 180.0, 150, 0.29, 0.0
 
 try:
     from skimage.graph import MCP_Geometric
@@ -61,8 +61,8 @@ try:
 except ImportError:                                      # pragma: no cover
     cv2 = None
 
-# chassis rectangle about the turning centre, m: x back..front, y right..left (450 x 595 mm frame)
-FOOTPRINT = (-0.30, 0.30, -0.23, 0.23)
+# chassis rectangle about the turning centre, m: x back..front, y right..left (450 mm wide; 600 mm long assumed)
+FOOTPRINT = (-0.30, 0.30, -0.225, 0.225)
 
 
 def wrap(a):
@@ -155,7 +155,7 @@ class RollingCostmap:
 
     def __init__(self, size_m=16.0, res=0.05, ahead_m=3.0, recenter_m=1.5, hit=0.85, miss=0.4,
                  l_min=-2.0, l_max=2.0, occ=0.6, fade=0.97, max_hit_m=8.0, max_free_m=6.0,
-                 footprint=FOOTPRINT, lidar_xy=(0.0, 0.0)):
+                 footprint=FOOTPRINT, lidar_xy=(LIDAR_X, LIDAR_Y)):
         self.n = int(round(size_m / res))
         self.res, self.size = res, self.n * res
         self.ahead, self.recenter_m = ahead_m, recenter_m
@@ -272,7 +272,7 @@ class LocalNav:
                  w_corridor_lin=1.0, carrot_m=7.0, w_prev=0.4, prev_skip_m=1.5, route_clear_m=0.6,
                  route_snap_m=0.35, progress_bonus=1.2, replan_s=0.2,
                  widen_after_s=8.0, widen=1.6, a_lat=0.5, clear_slow=(0.35, 0.90), v_min_scale=0.35,
-                 min_radius=1.0, w_kin=20.0, use_mcp=True, creep_min_m=2.0, creep_v=0.25,
+                 min_radius=0.6, w_kin=20.0, use_mcp=True, creep_min_m=2.0, creep_v=0.25,
                  bump_pad_m=0.15, bump_depth_m=0.25, bump_keep_s=180.0, **map_kw):
         self.map = RollingCostmap(**map_kw)
         self.lethal, self.inflate, self.w_inflate = lethal_m, inflate_m, w_inflate

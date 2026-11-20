@@ -49,10 +49,11 @@ import ntrip_rtk                      # noqa: E402
 import robot_drive as rd              # noqa: E402
 import app_link                       # noqa: E402
 import delivery as dlv                # noqa: E402
-from lidar_odom import scan_to_points  # noqa: E402
+from lidar_odom import LIDAR_X, LIDAR_Y, scan_to_points  # noqa: E402
 import local_nav as ln                # noqa: E402
 
-TRACK_EFF = 0.95                       # m, effective skid-steer track on tile (motor_cal turn maps)
+TRACK_EFF = 0.62                       # m, effective track: spin test on the floor 20 Nov 2026 with the rear caster
+                                       # (gyro vs wheels, 0.617 / 0.629 m). Was 0.95 with the dragged rear wheels.
 RTK = ("4", "5")                       # GGA fix qualities trusted for heading (RTK fixed / float)
 JUMP_M = 0.5                           # a fix this far from the previous one (at <= 2.5 m/s, 5 Hz) is an outlier
 WHEEL_SCALE = 0.94                     # effective/nominal wheel circumference (LiDAR vs encoders, motor_cal)
@@ -345,11 +346,11 @@ def lidar_check(lid, a):
     pts = scan_to_points(lid.scan)
     if len(pts) == 0:
         return 1.0, ""
-    x, y = pts[:, 0], pts[:, 1]
-    r = (x * x + y * y) ** 0.5
+    x, y = pts[:, 0], pts[:, 1]                                   # robot frame: origin at the turning centre
+    r = ((x - LIDAR_X) ** 2 + (y - LIDAR_Y) ** 2) ** 0.5           # distance from the LiDAR itself
     if (r < a.near_m).any():
         i = r.argmin()
-        return 0.0, f"something {r[i]:.2f} m away at {math.degrees(math.atan2(y[i], x[i])):+.0f} deg"
+        return 0.0, f"something {r[i]:.2f} m from the LiDAR at {math.degrees(math.atan2(y[i] - LIDAR_Y, x[i] - LIDAR_X)):+.0f} deg"
     ahead = (x > 0) & (abs(y) < a.half_width)
     if ahead.any():
         d = x[ahead].min()
@@ -414,7 +415,7 @@ def main():
     ap.add_argument("--speed", type=float, default=1.5, help="m/s (1.5 = ~141 wheel rpm of ~195; 0.8 on 16 Nov, 0.3 before)")
     ap.add_argument("--init-m", type=float, default=2.0, help="straight distance used to find the heading")
     ap.add_argument("--lookahead", type=float, default=None,
-                    help="pure pursuit look-ahead, m (default max(1.5, 2.5 x speed): ~1.35 s turning lag, 2.0 m at 0.8 m/s)")
+                    help="pure pursuit look-ahead, m (default max(1.0, 1.4 x speed): ~0.72 s turning lag with the caster)")
     ap.add_argument("--stop-m", type=float, default=0.8, help="stop if something is this close in the path")
     ap.add_argument("--slow-m", type=float, default=2.0, help="half speed if something is this close in the path")
     ap.add_argument("--half-width", type=float, default=0.45, help="half width of the path corridor, m")
@@ -425,7 +426,8 @@ def main():
                     help="never creep slower than this while moving (slow skid-steer turns pivot and stall)")
     ap.add_argument("--gps-gain", type=float, default=1.0,
                     help="scale on how strongly GPS pulls the fused pose (0 = wheels + gyro only after the heading is found)")
-    ap.add_argument("--min-radius", type=float, default=1.0, help="tightest turn allowed, m")
+    ap.add_argument("--min-radius", type=float, default=0.6,
+                    help="tightest turn allowed, m (0.6 with the rear caster; was 1.0 for the skid-steer)")
     ap.add_argument("--inner-min", type=float, default=0.3, help="inner wheel never below this fraction of the outer")
     ap.add_argument("--port", type=int, default=8100, help="hold-to-run page port")
     ap.add_argument("--no-ntrip", action="store_true", help="don't start the RTK client (plain GPS)")
@@ -477,7 +479,7 @@ def main():
     if a.max_s is None:
         a.max_s = float("inf") if a.app else 180.0
     if a.lookahead is None:
-        a.lookahead = max(1.5, 2.5 * a.speed)
+        a.lookahead = max(1.0, 1.4 * a.speed)      # turning lag ~0.72 s with the caster (was ~1.35 s: max(1.5, 2.5 v))
     ok_fix = set(a.min_fix.split(","))
 
     # --- GPS + RTK
