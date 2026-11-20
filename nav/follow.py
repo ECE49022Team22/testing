@@ -13,11 +13,12 @@ How it works:
   out on UART4 / pin 32). If the Pi has no IPv4 route, the caster is reached through NAT64 (64:ff9b::/96).
   Positions go into a local east/north frame (metres) around the start.
 - Heading: the IMU's gyro gives the turn; the absolute heading comes from the GPS track. The robot first drives
-  --init-m straight (gyro holding zero turn) and takes the heading from that track; afterwards the heading is
+  --init-m straight (gyro holding zero turn, at --init-speed) and takes the heading from that track (the last
+  ~init-m + 1 m of one unbroken straight drive: a pause or a turn over INIT_TURN_DEG restarts it); afterwards the heading is
   nudged toward the GPS course whenever it drives fairly straight. (The IMU compass is unreliable by the motors.)
 - `line` builds a straight route from the start along that initial heading; `route` follows the given points.
 - Steering: pure pursuit to a point --lookahead m ahead on the route -> turn rate; wheel speeds from the
-  skid-steer model (effective track 0.95 m, motor_cal) with a gyro yaw-rate correction.
+  wheel model (effective track TRACK_EFF, ground spin test) with a gyro yaw-rate correction.
 - LiDAR guard (robot frame, x forward, y left; LiDAR front at 271.5 deg, chassis returns < 15 cm ignored):
   stop if anything is in the corridor ahead (|y| < --half-width) within --stop-m; half speed within --slow-m;
   stop if anything at all is within --near-m; stop if the LiDAR goes quiet. It resumes on its own once clear.
@@ -54,6 +55,7 @@ import local_nav as ln                # noqa: E402
 
 TRACK_EFF = 0.62                       # m, effective track: spin test on the floor 20 Nov 2026 with the rear caster
                                        # (gyro vs wheels, 0.617 / 0.629 m). Was 0.95 with the dragged rear wheels.
+INIT_TURN_DEG = 5.0                    # heading measurement restarts if the robot turns more than this
 RTK = ("4", "5")                       # GGA fix qualities trusted for heading (RTK fixed / float)
 JUMP_M = 0.5                           # a fix this far from the previous one (at <= 2.5 m/s, 5 Hz) is an outlier
 WHEEL_SCALE = 0.94                     # effective/nominal wheel circumference (LiDAR vs encoders, motor_cal)
@@ -414,6 +416,9 @@ def main():
     ap.add_argument("--side", choices=("left", "right"), default="left", help="local: mirror the path to the right")
     ap.add_argument("--speed", type=float, default=1.5, help="m/s (1.5 = ~141 wheel rpm of ~195; 0.8 on 16 Nov, 0.3 before)")
     ap.add_argument("--init-m", type=float, default=2.0, help="straight distance used to find the heading")
+    ap.add_argument("--init-speed", type=float, default=0.4,
+                    help="speed while finding the heading, m/s (straight, no steering round obstacles: only the "
+                         "LiDAR stop protects it)")
     ap.add_argument("--lookahead", type=float, default=None,
                     help="pure pursuit look-ahead, m (default max(1.0, 1.4 x speed): ~0.72 s turning lag with the caster)")
     ap.add_argument("--stop-m", type=float, default=0.8, help="stop if something is this close in the path")
@@ -786,8 +791,16 @@ def main():
             xt = None
             if S["phase"] == "init":
                 ip = S.setdefault("init_pts", [])
-                if fix and fix["q"] in RTK and S["pos_t"] == now and (not ip or ip[-1][:2] != tuple(S["pos"])):
+                # Only one unbroken straight drive counts (20 Nov: the window kept every point since start-up, across
+                # two hand turns and a stop with 0.7 m of RTK-float wander, so the fit never got under 15 cm): restart
+                # on any pause, or once the gyro has turned more than INIT_TURN_DEG from the window's first point.
+                if pause or (ip and abs(math.degrees(wrap(imu.yaw - ip[0][2]))) > INIT_TURN_DEG):
+                    ip.clear()
+                if (not pause and fix and fix["q"] in RTK and S["pos_t"] == now
+                        and (not ip or ip[-1][:2] != tuple(S["pos"]))):
                     ip.append((*S["pos"], imu.yaw))
+                while len(ip) > 8 and math.dist(ip[1][:2], ip[-1][:2]) >= a.init_m + 1.0:
+                    ip.pop(0)                                         # fit only the last ~init_m + 1 m
                 moved = math.dist(ip[0][:2], ip[-1][:2]) if len(ip) >= 2 else 0.0
                 fit = line_fit([q[:2] for q in ip]) if len(ip) >= 8 else None
                 if moved >= a.init_m and fit and fit[2] < 0.15 and (dm is None or route is not None):
@@ -804,7 +817,7 @@ def main():
                     print(f"heading from the first {moved:.1f} m: {math.degrees(S['heading']):.1f} deg (from east, CCW); "
                           f"route {route.length:.1f} m, now at {S['s']:.1f} m", flush=True)
                 else:
-                    v, w = a.speed * 0.7, 0.0                           # straight, gyro holds zero turn
+                    v, w = min(a.speed, a.init_speed), 0.0              # straight, gyro holds zero turn; no planner yet
             if S["phase"] == "follow" and route is not None:
                 head = S["heading"] + (imu.yaw - S["yaw0"])
                 x, y = S["fused"]                                      # fused pose, not raw GPS
