@@ -18,7 +18,8 @@ import uuid
 
 DRIVING = ("EN_ROUTE_PICKUP", "EN_ROUTE_DESTINATION")
 STOPS = ("AWAITING_LOAD", "ARRIVED")
-STALE_S = {"delivery": 600, "cancel": 600, "unlock": 60, "lock": 60}
+LEG_OF = {"EN_ROUTE_PICKUP": 0, "AWAITING_LOAD": 0, "EN_ROUTE_DESTINATION": 1, "ARRIVED": 1}
+STALE_S = {"delivery": 600, "cancel": 600, "unlock": 60, "lock": 60, "state": 60}
 NOT_STOPPED = "not stopped at the pickup or destination"
 
 
@@ -139,6 +140,8 @@ class Delivery:
             ok, out = self._delivery(body)
         elif typ == "cancel":
             ok, out = self._cancel(body)
+        elif typ == "state":
+            ok, out = self._force(body)
         elif typ in ("unlock", "lock") and (not self.job or body.get("deliveryId") != self.delivery_id):
             ok, out = False, "not the current delivery"
         elif typ == "unlock":
@@ -176,6 +179,21 @@ class Delivery:
         self.job = self.leg = None
         self.opened = False
         self._set("IDLE")
+        return True, self.state
+
+    def _force(self, body):
+        """Operator override from the app: go straight to this state of the current delivery (IDLE drops it)."""
+        state = body.get("state")
+        if not self.job or body.get("deliveryId") != self.delivery_id:
+            return False, "not the current delivery"
+        if state == "IDLE":
+            self.job = self.leg = None
+        elif state in LEG_OF:
+            self.leg = LEG_OF[state]
+        else:
+            return False, f"unknown state {state!r}"
+        self.opened = False
+        self._set(state)
         return True, self.state
 
     def _unlock(self):
