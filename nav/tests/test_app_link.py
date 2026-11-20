@@ -100,6 +100,7 @@ def test_state_override():
     assert d.leg == 1 and d.current_leg() is None and states(d)[-1] == "ARRIVED"
     assert d.handle(cmd("unlock", {"deliveryId": "d1"}), now())["ok"]                       # stopped now, so the lid opens
     assert d.handle(cmd("state", {"deliveryId": "d1", "state": "EN_ROUTE_PICKUP"}), now())["ok"] and d.current_leg()[0] == 0
+    assert d.lid.state == "locked"                                                       # never drives with the lid open
     assert not d.handle(cmd("state", {"deliveryId": "d1", "state": "FLYING"}), now())["ok"]
     assert d.handle(cmd("state", {"deliveryId": "d1", "state": "IDLE"}), now())["result"] == "IDLE" and d.delivery_id is None
 

@@ -183,16 +183,20 @@ class Delivery:
         return True, self.state
 
     def _force(self, body):
-        """Operator override from the app: go straight to this state of the current delivery (IDLE drops it)."""
+        """Operator override from the app: go straight to this state of the current delivery (IDLE drops it).
+        It never drives with the lid open: a driving state locks it first, and IDLE tries to."""
         state = body.get("state")
         if not self.job or body.get("deliveryId") != self.delivery_id:
             return False, "not the current delivery"
-        if state == "IDLE":
-            self.job = self.leg = None
-        elif state in LEG_OF:
-            self.leg = LEG_OF[state]
-        else:
+        if state not in LEG_OF and state != "IDLE":
             return False, f"unknown state {state!r}"
+        if state in DRIVING and not self._set_lid("locked"):
+            return False, "latch did not respond"
+        if state == "IDLE":
+            self._set_lid("locked")
+            self.job = self.leg = None
+        else:
+            self.leg = LEG_OF[state]
         self.opened = False
         self._set(state)
         return True, self.state
