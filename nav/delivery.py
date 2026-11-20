@@ -173,8 +173,9 @@ class Delivery:
         return True, self.state
 
     def _cancel(self, body):
-        """The app cleared this delivery (operator): drop it and go back to IDLE, wherever the robot is."""
-        if not self.job or body.get("deliveryId") != self.delivery_id:
+        """The app cleared this delivery (operator): drop it and go back to IDLE, wherever the robot is.
+        force: drop whatever job it holds, even another one (the operator wants the robot free)."""
+        if not self.job or (body.get("deliveryId") != self.delivery_id and body.get("force") is not True):
             return True, "nothing to cancel"
         self.job = self.leg = None
         self.opened = False

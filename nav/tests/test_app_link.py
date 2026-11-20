@@ -89,6 +89,7 @@ def test_cancel():
     assert d.handle(cmd("cancel", {"deliveryId": "d1"}), now())["result"] == "IDLE"
     assert d.state == "IDLE" and d.delivery_id is None and d.current_leg() is None and d.telemetry()["state"] == "IDLE"
     assert d.handle(cmd("delivery", dict(JOB, deliveryId="d2")), now())["ok"]                 # free for the next one
+    assert d.handle(cmd("cancel", {"deliveryId": "d9", "force": True}), now())["result"] == "IDLE" and d.delivery_id is None
 
 
 def test_state_override():
