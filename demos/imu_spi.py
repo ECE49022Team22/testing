@@ -14,8 +14,7 @@ import time
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "motor_cal"))
-import robot_drive                             # noqa: E402  (its Imu class reads the BNO085 gyro over SPI)
-
+import robot_drive                            
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 20.0
 
 sensor = robot_drive.Imu()
