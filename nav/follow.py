@@ -37,6 +37,7 @@ import http.server
 import json
 import math
 import os
+import re
 import socket
 import sys
 import threading
@@ -179,6 +180,9 @@ button{border:0;border-radius:14px;font-weight:700;color:#fff;touch-action:none}
 #pad .l{position:absolute;width:100%;text-align:center;color:#777;font-size:.8em}
 #r{width:100%;height:6vh;font-size:1em;background:#444;margin-top:6px}
 #s{font-size:.95em;line-height:1.45;margin-top:8px}.bad{color:#ff6b6b}
+.cols{display:flex;gap:10px;align-items:flex-start}.cols>div:first-child{flex:1;min-width:0}
+.mot{flex:0 0 auto;border-left:1px solid #444;padding-left:10px}.mot table{border-collapse:collapse;font-variant-numeric:tabular-nums}
+.mot th,.mot td{padding:0 0 0 8px;text-align:right;white-space:nowrap}.mot th:first-child,.mot td:first-child{padding-left:0;text-align:left;color:#999;font-weight:400}
 </style></head><body>
 <button id=e style="display:none;width:100%;height:9vh;font-size:1.2em;margin-bottom:8px;background:#b8432f"></button>
 <button id=b>HOLD TO RUN (autonomous)</button>
@@ -373,6 +377,25 @@ def gps_paused(S, fix, ok_fix, now, a):
         S["gps_ok_t"] = now
         return False
     return S["phase"] != "follow" or now - S.get("gps_ok_t", -1e9) > a.gps_grace
+
+
+def motor_panel(mcu, now):
+    """Right-hand column of the page: per wheel, target and measured rpm, duty and encoder count (robot frame:
+    + = rolling forward; right wheel = motor 1, left = motor 2), plus the firmware's flags."""
+    g = mcu.row
+    if g is None:
+        return "<div class=mot><b>Motors</b><br><span class=bad>no telemetry</span></div>"
+    L, R = rd.LEFT_SIGN, rd.RIGHT_SIGN
+    f1 = lambda x: f"{x + 0.0:+.1f}"                                   # + 0.0: no "-0.0"
+    rows = [("target rpm", f1(g[5] * L), f1(g[0] * R)), ("meas. rpm", f1(g[6] * L), f1(g[1] * R)),
+            ("duty %", f1(g[7] * L), f1(g[2] * R)), ("encoder", f"{int(g[9] * L):+d}", f"{int(g[4] * R):+d}")]
+    age = now - mcu.t
+    flags = re.sub(r"\bt=\d+", "", mcu.flags or "").strip()           # drop the firmware's tick counter
+    return ("<div class=mot><b>Motors</b><table><tr><th></th><th>left</th><th>right</th></tr>"
+            + "".join(f"<tr><td>{k}</td><td>{a}</td><td>{b}</td></tr>" for k, a, b in rows) + "</table>"
+            + (f"<span class=bad>telemetry {age:.1f} s old</span>" if age > 0.5 else "")
+            + (f"<br><span{' class=bad' if 'FAULT' in flags or 'stall' in flags else ''}>{flags[:40]}</span>" if flags else "")
+            + "</div>")
 
 
 def nav_status(nav, back):
@@ -965,13 +988,13 @@ def main():
                         f"{', delivery ' + str(dm.delivery_id) if dm.delivery_id else ''}, lid {dm.lid.state}<br>"
                         f"app link {link.status}, last poll {link.age():.0f} s ago<br>"
                         + (f"leg progress {S['s']:.1f} / {route.length:.1f} m" if route else "no leg"))
-            st["html"] = (f"<b>{'PAUSED: ' + pause if pause else ('RUNNING' if S['phase'] == 'follow' else 'finding heading')}</b>"
+            st["html"] = "<div class=cols><div>" + (f"<b>{'PAUSED: ' + pause if pause else ('RUNNING' if S['phase'] == 'follow' else 'finding heading')}</b>"
                           f"{'<br>' + lid_why if lid_why and not pause else ''}<br>"
                           f"GPS {FIX_NAMES.get(fx.get('q'), '?')}, {fx.get('sats', 0)} sats, age {fx.get('age') or '-'}<br>"
                           f"{prog}"
                           f"{f', off line {xt:+.2f} m' if xt is not None else ''}<br>"
                           f"heading {math.degrees(head) if head is not None else float('nan'):.0f} deg, speed {v:.2f} m/s"
-                          + (f"<br>avoid: {nav_status(nav, back)}" if nav is not None else ""))
+                          + (f"<br>avoid: {nav_status(nav, back)}" if nav is not None else "")) + "</div>" + motor_panel(mcu, now) + "</div>"
             if rec is not None:
                 if (held or manual) and not rec.on.is_set():
                     rec.on.set()
