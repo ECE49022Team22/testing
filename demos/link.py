@@ -66,7 +66,12 @@ try:
         print("Type a command and press Enter (Ctrl-C to quit).\n")
         for typed in sys.stdin:
             if typed.strip():
-                send(typed.strip())
+                try: 
+                    while True:
+                        send(typed.strip())
+                        time.sleep(0.05)
+                except: 
+                    pass
 except KeyboardInterrupt:
     pass
 finally:
